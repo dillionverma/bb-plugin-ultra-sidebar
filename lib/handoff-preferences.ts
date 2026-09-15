@@ -1,14 +1,30 @@
-import { z } from "zod";
-
 const KEY = "bb-workspace-sidebar:handoff-model-usage:v1";
-const usageSchema = z.array(z.object({
-  providerId: z.string(), model: z.string(), count: z.number().int().nonnegative(), lastUsed: z.number().nonnegative(),
-})).max(200);
+const MAX_ENTRIES = 200;
 
-function readUsage() {
+interface UsageEntry {
+  providerId: string;
+  model: string;
+  count: number;
+  lastUsed: number;
+}
+
+// Validated by hand: pulling zod into the frontend bundle costs ~450 KB, which
+// delays the sidebar replacing bb's list on every load.
+function parseEntry(value: unknown): UsageEntry | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { providerId, model, count, lastUsed } = value as Record<string, unknown>;
+  if (typeof providerId !== "string" || typeof model !== "string") return null;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 0) return null;
+  if (typeof lastUsed !== "number" || !Number.isFinite(lastUsed) || lastUsed < 0) return null;
+  return { providerId, model, count, lastUsed };
+}
+
+function readUsage(): UsageEntry[] {
   try {
-    const parsed = usageSchema.safeParse(JSON.parse(localStorage.getItem(KEY) ?? "[]"));
-    return parsed.success ? parsed.data : [];
+    const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    if (!Array.isArray(parsed) || parsed.length > MAX_ENTRIES) return [];
+    const entries = parsed.map(parseEntry);
+    return entries.every((entry): entry is UsageEntry => entry !== null) ? entries : [];
   } catch { return []; }
 }
 
@@ -16,7 +32,7 @@ export function recordHandoffModel(providerId: string, model: string) {
   const usage = readUsage();
   const previous = usage.find(entry => entry.providerId === providerId && entry.model === model);
   const next = [{ providerId, model, count: (previous?.count ?? 0) + 1, lastUsed: Date.now() },
-    ...usage.filter(entry => entry !== previous)].slice(0, 200);
+    ...usage.filter(entry => entry !== previous)].slice(0, MAX_ENTRIES);
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
 }
 

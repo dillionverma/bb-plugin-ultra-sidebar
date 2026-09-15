@@ -1,25 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
-import { z } from "zod";
 import { PROJECT_FILTER_KEY } from "./useViewState";
 
 export const SIDEBAR_FILTERS_KEY = "bb-workspace-sidebar:filters:v1";
 
-const filtersSchema = z.object({
-  workspaceId: z.string().min(1).nullable(),
-  projectIds: z.array(z.string().min(1)),
-});
-
-type SidebarFilters = z.infer<typeof filtersSchema>;
+interface SidebarFilters {
+  workspaceId: string | null;
+  projectIds: string[];
+}
 
 const ALL: SidebarFilters = { workspaceId: null, projectIds: [] };
+
+// Validated by hand: pulling zod into the frontend bundle costs ~450 KB, which
+// delays the sidebar replacing bb's list on every load.
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function parseFilters(value: unknown): SidebarFilters | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { workspaceId, projectIds } = value as Record<string, unknown>;
+  if (workspaceId !== null && !isNonEmptyString(workspaceId)) return null;
+  if (!Array.isArray(projectIds) || !projectIds.every(isNonEmptyString)) return null;
+  return { workspaceId, projectIds };
+}
 
 function readFilters(): SidebarFilters {
   try {
     const raw = window.localStorage.getItem(SIDEBAR_FILTERS_KEY);
-    if (raw !== null) {
-      const result = filtersSchema.safeParse(JSON.parse(raw));
-      return result.success ? result.data : ALL;
-    }
+    if (raw !== null) return parseFilters(JSON.parse(raw)) ?? ALL;
     const legacy = window.localStorage.getItem(PROJECT_FILTER_KEY);
     return legacy ? { workspaceId: null, projectIds: [legacy] } : ALL;
   } catch {
