@@ -31,15 +31,12 @@ import {
   type AgentActivityState,
 } from "./lib/agent-activity";
 
-import { NATIVE_SUBAGENTS } from "./lib/native-subagents";
-import {
-  createNativeSubagentsReader,
-  nativeSubagentEntrySchema,
-} from "./lib/native-subagents.server";
 
 import { summarizeQueue } from "./lib/thread-queue";
-import { createScheduledTasksReader, scheduledTasksResultSchema } from "./lib/scheduled-tasks.server";
+import { createScheduledTasksActions, createScheduledTasksReader, scheduledTaskRefSchema, scheduledTasksResultSchema } from "./lib/scheduled-tasks.server";
 import { createThreadDiffReader, threadDiffSchema } from "./lib/thread-diffs.server";
+import { ProjectIconCache } from "./lib/project-artwork-cache";
+import { findProjectArtwork, type ProjectArtwork } from "./lib/project-artwork.server";
 
 const itemKindSchema = z.enum(["project", "thread"]);
 const sortModeSchema = z.enum(["recent", "manual"]);
@@ -171,23 +168,22 @@ export const rpcContract = defineRpcContract({
     input: z.null(),
     output: scheduledTasksResultSchema,
   },
+  /** Start an automation now, outside its schedule. */
+  "scheduledTasks.run": {
+    input: scheduledTaskRefSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  /** Pause (false) or resume (true) an automation's schedule. */
+  "scheduledTasks.setEnabled": {
+    input: scheduledTaskRefSchema.extend({ enabled: z.boolean() }),
+    output: z.object({ ok: z.literal(true) }),
+  },
   /**
    * The current activity of each thread asked about, for the rows that are
    * live. Threads with nothing to say are simply absent. Asking is also what
    * starts the server tracking a thread; updates then arrive on the
    * AGENT_ACTIVITY realtime channel.
    */
-  /**
-   * The agents each thread is running inside itself. These have no BB thread
-   * of their own, so the sidebar cannot find them in the host's thread list.
-   * Every thread asked about gets an entry, empty included, so a client can
-   * tell "none left" from "not asked". Asking also starts the server
-   * following the thread; changes then arrive on NATIVE_SUBAGENTS.
-   */
-  "threads.nativeSubagents": {
-    input: z.object({ threadIds: z.array(z.string()).min(1).max(100) }),
-    output: z.object({ entries: z.array(nativeSubagentEntrySchema) }),
-  },
   "threads.agentActivity": {
     input: z.object({ threadIds: z.array(z.string()).min(1).max(300) }),
     output: z.object({ entries: z.array(agentActivitySchema) }),
@@ -346,6 +342,24 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadIds: z.array(z.string()).min(1).max(300) }),
     output: z.object({ entries: z.array(executionSchema) }),
   },
+  /**
+   * Each project's artwork: a BB glyph its package.json names, rendered to
+   * SVG here, or "image" when an icon or logo file was found — the bytes
+   * themselves come from the /project-icon HTTP route so the browser can
+   * cache them. Every project asked about gets an entry.
+   */
+  "projects.artwork": {
+    input: z.object({ projectIds: z.array(z.string().min(1)).min(1).max(300) }),
+    output: z.object({
+      entries: z.array(
+        z.discriminatedUnion("kind", [
+          z.object({ projectId: z.string(), kind: z.literal("glyph"), svg: z.string() }),
+          z.object({ projectId: z.string(), kind: z.literal("image") }),
+          z.object({ projectId: z.string(), kind: z.literal("missing") }),
+        ]),
+      ),
+    }),
+  },
 });
 
 function formatWorkspace(workspace: Workspace, memberCount: number): string {
@@ -355,7 +369,8 @@ function formatWorkspace(workspace: Workspace, memberCount: number): string {
 }
 
 export default async function plugin(bb: BbPluginApi) {
-  const readScheduledTasks = createScheduledTasksReader(bb.sdk.plugins);
+  const scheduledTasks = createScheduledTasksReader(bb.sdk.plugins);
+  const scheduledTaskActions = createScheduledTasksActions(bb.sdk.plugins, scheduledTasks.invalidate);
   const readThreadDiffs = createThreadDiffReader(bb.sdk.environments);
   const db = bb.storage.database();
   bb.storage.migrate(db, MIGRATIONS);
@@ -467,20 +482,6 @@ export default async function plugin(bb: BbPluginApi) {
     agentPulls.set(thread.id, pull);
   });
 
-  // ---- native subagents --------------------------------------------------
-  //
-  // Same shape as agent activity: the reader seeds a parent the first time
-  // somebody asks about it, then follows only the event tail it has not seen.
-  const nativeSubagents = createNativeSubagentsReader(
-    bb.sdk.threads,
-    (entry) => bb.realtime.publish(NATIVE_SUBAGENTS, entry),
-    (message) => bb.log.warn(message),
-  );
-
-  bb.events.on("experimental_thread.events", ({ thread, sequence }) => {
-    void nativeSubagents.update(thread.id, sequence);
-  });
-
   const forgetAgent = ({ thread }: { thread: { id: string } }) => {
     if (!agentStates.delete(thread.id)) return;
     publishAgent(thread.id, null);
@@ -488,28 +489,81 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.idle", forgetAgent);
   bb.events.on("thread.failed", forgetAgent);
 
+  // Artwork discovery is two fuzzy file searches plus a read per candidate,
+  // against the project's default checkout. Cached with a TTL so a sidebar
+  // that re-mounts (every window, every reload) does not repeat the search.
+  const artworkCache = new ProjectIconCache<ProjectArtwork>((projectId, signal) =>
+    findProjectArtwork(
+      {
+        listFiles: (args) => bb.sdk.projects.files(args),
+        readFile: (args) => bb.sdk.projects.fileContent(args),
+      },
+      projectId,
+      signal,
+    ),
+  );
+  bb.onDispose(() => artworkCache.dispose());
+
+  async function projectArtworkEntry(projectId: string) {
+    try {
+      const artwork = await artworkCache.get(projectId);
+      if (artwork === null) return { projectId, kind: "missing" as const };
+      return artwork.kind === "glyph"
+        ? { projectId, kind: "glyph" as const, svg: artwork.svg }
+        : { projectId, kind: "image" as const };
+    } catch (error) {
+      // A project with no checkout on this machine, or one bb cannot read,
+      // simply has no artwork. The row keeps its folder icon.
+      bb.log.debug(
+        `No artwork for project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { projectId, kind: "missing" as const };
+    }
+  }
+
+  bb.http.route("GET", "/project-icon", async (context) => {
+    const projectId = context.req.query("projectId")?.trim();
+    if (!projectId) return new Response(null, { status: 400 });
+    try {
+      const artwork = await artworkCache.get(projectId);
+      if (artwork === null || artwork.kind !== "image") {
+        return new Response(null, {
+          status: 404,
+          headers: { "cache-control": "private, max-age=60" },
+        });
+      }
+      return new Response(artwork.bytes, {
+        headers: {
+          "cache-control": "private, max-age=300",
+          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+          "content-type": artwork.mimeType,
+          "x-content-type-options": "nosniff",
+        },
+      });
+    } catch (error) {
+      bb.log.debug(
+        `Could not serve an icon for project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return new Response(null, {
+        status: 404,
+        headers: { "cache-control": "private, max-age=60" },
+      });
+    }
+  });
+
   bb.rpc.register(rpcContract, {
+    "projects.artwork": async ({ projectIds }) => ({
+      entries: await Promise.all([...new Set(projectIds)].map(projectArtworkEntry)),
+    }),
     "threads.plan": async ({ threadId }) => ({
       plan: (await bb.sdk.threads.timeline({ threadId, segmentLimit: "1", summaryOnly: "true" })).activePromptMode,
     }),
     "threads.goal": async ({ threadId }) => ({
       goal: (await bb.sdk.threads.timeline({ threadId, segmentLimit: "1", summaryOnly: "true" })).goal,
     }),
-    "scheduledTasks.list": () => readScheduledTasks(),
-    "threads.nativeSubagents": async ({ threadIds }) => ({
-      entries: await Promise.all(
-        threadIds.map(async (threadId) => {
-          try {
-            return await nativeSubagents.read(threadId);
-          } catch (cause) {
-            // One unreadable thread must not fail the batch; an empty list
-            // leaves that row exactly as it was.
-            bb.log.warn(`Could not read subagents for ${threadId}: ${cause}`);
-            return { threadId, agents: [] };
-          }
-        }),
-      ),
-    }),
+    "scheduledTasks.list": () => scheduledTasks.list(),
+    "scheduledTasks.run": (ref) => scheduledTaskActions.run(ref),
+    "scheduledTasks.setEnabled": (input) => scheduledTaskActions.setEnabled(input),
     "threads.agentActivity": async ({ threadIds }) => {
       const entries: {
         threadId: string;

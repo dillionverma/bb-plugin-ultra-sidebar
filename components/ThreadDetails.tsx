@@ -11,6 +11,7 @@ import { PlanDetails } from "./PlanDetails";
 import { ModeIcon } from "./ThreadModes";
 import { useThreadQueue } from "../hooks/useThreadQueue";
 import { MachineIcon } from "./MachineIndicator";
+import { ProjectIcon } from "./ProjectIcon";
 import { cn, formatHomePathForDisplay } from "@/lib/utils";
 import { useThreadExecution, type ThreadExecution } from "@/hooks/useThreadExecution";
 import { useSidebar, type ProviderInfo } from "./sidebar-context";
@@ -127,7 +128,7 @@ export function ThreadDetails({
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground">
           {projectName === "" ? null : (
             <span className="inline-flex min-w-0 max-w-full items-center gap-1" title={`Project: ${projectName}`}>
-              <Icon name="Folder" aria-hidden className="size-3 shrink-0" />
+              <ProjectIcon projectId={thread.projectId} className="size-3" />
               <span className="sr-only">Project: </span>
               <span className="truncate">{projectName}</span>
             </span>

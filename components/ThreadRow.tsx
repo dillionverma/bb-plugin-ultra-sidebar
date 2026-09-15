@@ -1,6 +1,5 @@
 import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadModes } from "./ThreadModes";
-import { useNativeSubagents } from "../hooks/useNativeSubagents";
 import { ThreadDiffCounts, ThreadDiffsContext } from "./ThreadWorkSummary";
 import { Checkbox } from "./ui/checkbox";
 import { useSidebarSelection } from "./SidebarInteractions";
@@ -36,6 +35,7 @@ import { RowContextMenu } from "./RowContextMenu";
 import { RowDropDecor, useDragActive } from "./drag-state-context";
 import { ThreadDetails } from "./ThreadDetails";
 import { MachineIndicator } from "./MachineIndicator";
+import { ProjectIcon } from "./ProjectIcon";
 import { prefetchPullRequestStack } from "./PullRequestStack";
 import {
   BranchBadge,
@@ -207,16 +207,8 @@ export const ThreadRow = memo(function ThreadRow({
   const isActive = sidebar.activeThreadId === thread.id;
   const isRoot = node.depth === 0;
   const isExpanded = sidebar.isSubtreeExpanded(thread.id);
-  // Only threads worth following: one whose agent is in motion, one the host
-  // says has background agents, or one somebody has opened to look inside.
-  const nativeAgents = useNativeSubagents(
-    thread.id,
-    agentOrb(thread) !== null ||
-      thread.activity.backgroundAgents > 0 ||
-      isExpanded,
-  );
-  const descendantCount = node.descendantCount + nativeAgents.length;
-  const hasChildren = node.children.length > 0 || nativeAgents.length > 0;
+  const descendantCount = node.descendantCount;
+  const hasChildren = node.children.length > 0;
 
   const compact = sidebar.compactRows;
   const [handoffOpen, setHandoffOpen] = useState(false);
@@ -298,7 +290,8 @@ export const ThreadRow = memo(function ThreadRow({
   const machine = details.machine ? (thread.host?.name ?? null) : null;
   const model = details.model ? (execution?.model ?? null) : null;
   const pr = details.pullRequest ? pullRequest : undefined;
-  const agent = details.agent ? provider : null;
+  // An unregistered provider still gets its icon, drawn from the id alone.
+  const agent = details.agent ? (provider ?? { id: thread.providerId }) : null;
   // The checkout behind the folder and branch badges, once the server has
   // said where it is. Until then the badges are plain text.
   const environmentId = thread.environment?.id ?? null;
@@ -310,8 +303,7 @@ export const ThreadRow = memo(function ThreadRow({
   const hasMeta =
     branch !== null ||
     model !== null ||
-    pr !== undefined ||
-    agent !== null;
+    pr !== undefined;
 
   const needsAttention =
     status?.tone === "needs-you" || status?.tone === "problem";
@@ -500,11 +492,6 @@ export const ThreadRow = memo(function ThreadRow({
                   </RowTip>
                 )}
               </span>
-              <RowTip label={[provider?.displayName ?? thread.providerId, execution?.model].filter(Boolean).join(" · ")}>
-                <span className="flex shrink-0 items-center" data-thread-provider-logo="">
-                  <ProviderIcon providerKind="agent" provider={provider ?? { id: thread.providerId }} className="size-3.5 shrink-0 opacity-80" />
-                </span>
-              </RowTip>
               <span className="relative flex min-w-0 flex-1 items-center">
                 {draftTitle === null ? (
                   orb !== null ? (
@@ -551,38 +538,52 @@ export const ThreadRow = memo(function ThreadRow({
               </span>
 
               {needsInput ? (
-                <span
-                  className="bb-ws-your-turn inline-flex shrink-0 items-center whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold leading-4"
-                  title={thread.indicatorLabel ?? "Waiting on an approval or an answer"}
-                >
-                  Your turn
-                </span>
+                <RowTip label={thread.indicatorLabel ?? "Waiting on an approval or an answer"}>
+                  <span className="bb-ws-your-turn inline-flex shrink-0 items-center whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold leading-4">
+                    Your turn
+                  </span>
+                </RowTip>
               ) : null}
 
               {thread.isPinned ? (
-                <Icon
-                  name="Pin"
-                  aria-label="Pinned"
-                  className="size-3 shrink-0 text-muted-foreground"
-                />
+                <RowTip label="Pinned">
+                  <span className="flex shrink-0 items-center">
+                    <Icon
+                      name="Pin"
+                      aria-label="Pinned"
+                      className="size-3 shrink-0 text-muted-foreground"
+                    />
+                  </span>
+                </RowTip>
               ) : null}
 
               {/* Roll a collapsed subtree's state up, so a waiting subagent is
                 never silently hidden behind a chevron. */}
               {hasChildren && !isExpanded ? (
-                <span
-                  aria-label={`${descendantCount} subagents`}
-                  className={cn(
-                    "shrink-0 rounded-full px-1.5 text-[10px] leading-4 tabular-nums",
-                    node.hasPendingDescendant
-                      ? "bg-primary/20 text-foreground"
+                <RowTip
+                  label={
+                    `${descendantCount} ${descendantCount === 1 ? "subagent" : "subagents"}` +
+                    (node.hasPendingDescendant
+                      ? " · one needs you"
                       : node.hasUnreadDescendant
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground/70",
-                  )}
+                        ? " · unread"
+                        : "")
+                  }
                 >
-                  {descendantCount}
-                </span>
+                  <span
+                    aria-label={`${descendantCount} subagents`}
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 text-[10px] leading-4 tabular-nums",
+                      node.hasPendingDescendant
+                        ? "bg-primary/20 text-foreground"
+                        : node.hasUnreadDescendant
+                          ? "bg-accent text-foreground"
+                          : "text-muted-foreground/70",
+                    )}
+                  >
+                    {descendantCount}
+                  </span>
+                </RowTip>
               ) : null}
 
               {compact ? null : rowActions}
@@ -597,7 +598,21 @@ export const ThreadRow = memo(function ThreadRow({
                 trailing={diffCounts}
               >
                 <span className="inline-flex min-w-0 max-w-full items-center gap-1" data-thread-context="">
-                  {project === null ? null : <span data-thread-project="" title={project} className="min-w-0 truncate text-muted-foreground">{project}</span>}
+                  {agent === null ? null : (
+                    <RowTip label={[provider?.displayName ?? thread.providerId, execution?.model].filter(Boolean).join(" · ")}>
+                      <span className="flex shrink-0 items-center text-muted-foreground" data-thread-provider-logo="">
+                        <ProviderIcon providerKind="agent" provider={agent} className="size-3 shrink-0 opacity-80" />
+                      </span>
+                    </RowTip>
+                  )}
+                  {project === null ? null : (
+                    <RowTip label={`Project · ${project}`}>
+                      <span data-thread-project="" className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
+                        <ProjectIcon projectId={thread.projectId} className="size-3" />
+                        <span className="min-w-0 truncate">{project}</span>
+                      </span>
+                    </RowTip>
+                  )}
                   <MachineIndicator
                     name={machine}
                     threadTitle={title}
@@ -633,14 +648,6 @@ export const ThreadRow = memo(function ThreadRow({
                 <PullRequestBadge
                   pullRequest={pr}
                   onOpen={() => sidebar.openUrl(pr.url)}
-                />
-              )}
-              <span className="flex-1" />
-              {agent === null ? null : (
-                <ProviderIcon
-                  providerKind="agent"
-                  provider={agent}
-                  className="size-3 shrink-0 opacity-80"
                 />
               )}
             </span>

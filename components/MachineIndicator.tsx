@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ComputerIcon,
@@ -8,6 +8,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Recognize explicit device names; arbitrary host names keep a generic glyph. */
 export function machineKind(name: string): "laptop" | "desktop" | "computer" {
@@ -47,6 +48,10 @@ export function MachineIndicator({
   onWarm(): void;
   children: ReactNode;
 }) {
+  // The tooltip yields to the popover: once details are open the hover word
+  // would sit on top of the very card that explains it.
+  const [tipOpen, setTipOpen] = useState(false);
+  const tip = name === null ? "Thread details" : `Machine · ${name}`;
   return (
     <span
       className="flex shrink-0"
@@ -64,11 +69,12 @@ export function MachineIndicator({
       onContextMenu={(event) => event.stopPropagation()}
     >
     <Popover open={open} onOpenChange={onOpenChange}>
+      <Tooltip open={tipOpen && !open} onOpenChange={setTipOpen}>
+      <TooltipTrigger asChild>
       <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={name === null ? `Details for ${threadTitle}` : `Machine: ${name}. Details for ${threadTitle}`}
-          title={name === null ? "Thread details" : `Machine: ${name}`}
           onPointerEnter={onWarm}
           onFocus={onWarm}
           onPointerDown={(event) => event.stopPropagation()}
@@ -84,6 +90,11 @@ export function MachineIndicator({
           {name === null ? <HugeiconsIcon icon={InformationCircleIcon} aria-hidden className="size-3" /> : <MachineIcon name={name} className="size-3" />}
         </button>
       </PopoverTrigger>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>
+        {tip}
+      </TooltipContent>
+      </Tooltip>
       <PopoverContent
         side="right"
         align="start"

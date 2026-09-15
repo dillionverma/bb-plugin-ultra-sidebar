@@ -56,9 +56,12 @@ bb plugin install .
   grouping by workspace or project keeps Done, Backlog and Canceled in their
   own headings at the bottom so finished work stops crowding the list.
 - **Hover** a row to reveal two quick actions beside its title: a clock that
-  snoozes the thread until 9am tomorrow, and a **Done** checkmark. Snooze hides the thread; it does not pause
-  its agent or schedule work. The right-click menu has a **Status** submenu
-  and the full set of snooze durations.
+  snoozes the thread until 9am tomorrow, and a **Done** checkmark. Snooze moves
+  the thread out of the list and into the **Snoozed** dock at the bottom of the
+  sidebar, where it shows its wake time and a **Wake** button; it does not pause
+  its agent or schedule work. A snoozed thread comes back on its own the moment
+  it asks a question, fails, or starts working. The right-click menu has a
+  **Status** submenu and the full set of snooze durations.
 - **The folder, branch and pull-request badges are links.** Hovering the
   folder or branch shows the checkout's path and which machine it is on;
   clicking reveals it in Finder (or the platform's file manager) when the
@@ -74,7 +77,7 @@ bb plugin install .
   bottom to top with each PR's state and check result.
 - **`Alt` + `↑`/`↓`** on a focused row moves it without a pointer.
 - **The sliders button** at the top of the list opens every view option:
-  group by status, workspace or project; filter to one project; pick which
+  group by status, workspace or project; pick which
   facts each row shows under its title (project, branch, machine, model,
   pull request, agent); include archived threads; collapse or
   expand every section. Row details and grouping persist per client.
@@ -183,11 +186,12 @@ Goal and scheduled-message details also open directly from their own chips.
 
 - Compact rows use BB’s native background and theme colors, the original Linear status colors, and tree connectors for expanded groups and subagents.
 - Threads waiting on an answer or approval show a solid amber **Your turn** badge beside the title in both row layouts. A static return arrow replaces the activity animation until the request is resolved; opening or selecting the thread does not hide the badge.
-- Active titles retain neutral text shimmer; reduced-motion settings disable it. Project, machine and modes share one supporting line. Click Goal or the machine icon for details, including actual goal objective and usage.
-- Queued message times remain attached to their threads. The collapsible Scheduled section reads recurring and one-time automations separately and respects the project filter. Missing or disabled Automations hides the section; loading failures offer Retry.
+- Active titles retain neutral text shimmer; reduced-motion settings disable it. Agent, project, machine and modes share one supporting line; the View options → Agent switch hides the agent icon. Click Goal or the machine icon for details, including actual goal objective and usage.
+- Queued message times remain attached to their threads. The bottom dock holds two collapsible sections that stay in view however long the list is: **Scheduled** reads recurring and one-time automations and respects the workspace and project filters, and **Snoozed** lists parked threads with their wake time. Clicking a schedule opens its details with **Run now**, **Pause**/**Resume**, and the related thread. Missing or disabled Automations hides the section; loading failures offer Retry.
 - Select threads from the toolbar or right-click empty sidebar space. Checkboxes occupy a separate column; status icons remain visible. The small bottom selection menu reserves its own space and closes after an action, Escape, dismissal, or clicking away. Hidden selections remain counted. Cmd/Ctrl-click and Shift selection remain available.
 - Thread, project, and workspace context menus group navigation, organization, preferences, and removal actions with icons. Right-click empty sidebar space for creation, selection, collapse/expand, and view options. Native text-field context menus remain available.
 - View options → Compact rows restores the detailed row layout.
+- Project headings, the project badge on rows, and the details card use each project's own artwork when it has some: the BB icon named by `bb.branding.icon` in its `package.json`, an icon or logo path declared there, or a conventionally named `favicon`, `icon`, `logo`, or `apple-touch-icon` file found in the project's default checkout (SVG, PNG, WebP, JPEG, or ICO, under 2 MB; SVGs are checked for scripts and external references before they are served). Projects without any keep the folder icon. View options → Project icons turns the lookup off.
 
 ### Active threads and detail cards
 
@@ -202,3 +206,5 @@ Hover or keyboard-focus a thread and choose **Hand off thread**. Search is at th
 Catalogs preload on hover or keyboard focus and cache for five minutes; loaded provider tabs switch without a network request, and search text stays intact. Successful model picks are remembered on this client and sorted by frequency, then recency. Provider tabs keep their original order.
 
 The sidebar shows provider logos beside thread titles in both row layouts; the tooltip includes the model when execution metadata is available.
+
+The toolbar’s left workspace and project pickers narrow all grouping modes. The project picker supports search and multiple selections; changing workspace resets those selections. Filters persist per browser.

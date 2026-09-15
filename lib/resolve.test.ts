@@ -210,7 +210,7 @@ describe("resolveTree", () => {
     expect(section(tree, null).threadCount).toBe(1);
   });
 
-  it("hides a snoozed thread until its time passes", () => {
+  it("parks a snoozed thread in the dock until its time passes", () => {
     const asleep = run(
       [thread({ id: "t1", projectId: "p1" })],
       [],
@@ -219,6 +219,10 @@ describe("resolveTree", () => {
       1000,
     );
     expect(asleep.sections.every((s) => s.threadCount === 0)).toBe(true);
+    expect(asleep.snoozed).toEqual([
+      { thread: expect.objectContaining({ id: "t1" }), until: 5000, workspaceId: null },
+    ]);
+    expect(asleep.wokenEarly).toEqual([]);
 
     const awake = run(
       [thread({ id: "t1", projectId: "p1" })],
@@ -228,6 +232,56 @@ describe("resolveTree", () => {
       9000,
     );
     expect(section(awake, null).threadCount).toBe(1);
+    expect(awake.snoozed).toEqual([]);
+  });
+
+  it("wakes a snoozed thread early when it needs a person or is working", () => {
+    const cases: Partial<PluginSidebarThread>[] = [
+      { hasPendingInteraction: true },
+      { indicator: "unread-error" },
+      { indicator: "waiting-for-input" },
+      { indicator: "runtime" },
+      { activity: { workflows: 1, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 } },
+    ];
+    for (const overrides of cases) {
+      const tree = run(
+        [thread({ id: "t1", projectId: "p1", ...overrides })],
+        [],
+        false,
+        [{ threadId: "t1", status: null, snoozedUntil: 5000 }],
+        1000,
+      );
+      expect(section(tree, null).threadCount).toBe(1);
+      expect(tree.snoozed).toEqual([]);
+      expect(tree.wokenEarly).toEqual(["t1"]);
+    }
+    // Finished quietly: stays asleep. Waking on "unread-success" would undo
+    // the snooze the moment an agent finished the very work it was parked for.
+    const quiet = run(
+      [thread({ id: "t1", projectId: "p1", indicator: "unread-success", isUnread: true })],
+      [],
+      false,
+      [{ threadId: "t1", status: null, snoozedUntil: 5000 }],
+      1000,
+    );
+    expect(quiet.snoozed).toHaveLength(1);
+  });
+
+  it("orders snoozed threads soonest first and keeps their workspace", () => {
+    const tree = run(
+      [thread({ id: "a", projectId: "p1" }), thread({ id: "b", projectId: "p2" })],
+      [{ kind: "project", refId: "p1", workspaceId: "ws1", sortIndex: 0 }],
+      false,
+      [
+        { threadId: "a", status: null, snoozedUntil: 9000 },
+        { threadId: "b", status: null, snoozedUntil: 4000 },
+      ],
+      1000,
+    );
+    expect(tree.snoozed.map((entry) => [entry.thread.id, entry.workspaceId])).toEqual([
+      ["b", null],
+      ["a", "ws1"],
+    ]);
   });
 
   it("honours manual order, with never-dragged threads after the ordered ones", () => {

@@ -57,6 +57,12 @@ export interface WorkspacesApi {
   setStatus(threadIds: string[], status: ManualStatus | null): void;
   /** Hide a thread until a timestamp; null wakes it. */
   setSnoozed(threadId: string, until: number | null): void;
+  /**
+   * Clear a snooze the resolver has already overridden (the thread needs a
+   * person or is working). Not the user's action, so no toast and no undo
+   * entry: undoing it would re-hide a thread that is asking for them.
+   */
+  wakeEarly(threadIds: string[]): void;
 }
 
 type Change = (state: WorkspaceState) => WorkspaceState;
@@ -112,7 +118,11 @@ export function useWorkspaces() {
     adopt(await rpc.call("workspaces.edit", { before, after }));
   };
   const changes = useRef<Change[] | null>(null);
-  const change = (label: string, transform: Change) => {
+  const change = (
+    label: string,
+    transform: Change,
+    toastOptions: { duration?: number } = {},
+  ) => {
     if (changes.current) {
       changes.current.push(transform);
       return;
@@ -129,6 +139,7 @@ export function useWorkspaces() {
       });
       toast.success(label, {
         id: "sidebar-action",
+        ...toastOptions,
         action: {
           label: "Undo",
           onClick: () => {
@@ -266,7 +277,15 @@ export function useWorkspaces() {
       change(
         until === null ? "Thread woken" : "Thread snoozed",
         lifecycle([id], { snoozedUntil: until }),
+        until === null ? undefined : { duration: 8000 },
       ),
+    wakeEarly: (ids) =>
+      void history.enqueue(async () => {
+        const before = await rpc.call("workspaces.state");
+        const after = lifecycle(ids, { snoozedUntil: null })(before);
+        if (JSON.stringify(before) === JSON.stringify(after)) return;
+        await edit(before, after);
+      }),
   };
   return { ...api, batch, history };
 }

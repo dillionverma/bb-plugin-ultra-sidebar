@@ -37,8 +37,7 @@ export function isSyntheticSectionId(id: string | null): boolean {
 export interface RegroupInput {
   sections: readonly Section[];
   groupBy: GroupBy;
-  /** Only one project's threads, or null for all of them. */
-  projectFilter: string | null;
+  projectIds: readonly string[];
   /** Which of the five status buckets a thread belongs in. */
   bucketOf(node: ThreadNode): StatusBucket;
 }
@@ -54,12 +53,13 @@ export interface RegroupInput {
  * finished work stops crowding the workspace it came from.
  */
 export function regroup(input: RegroupInput): Section[] {
-  const { sections, groupBy, projectFilter, bucketOf } = input;
+  const { sections, groupBy, projectIds, bucketOf } = input;
+  const selectedProjects = new Set(projectIds);
 
   const filtered =
-    projectFilter === null
+    selectedProjects.size === 0
       ? sections
-      : sections.map((section) => filterSection(section, projectFilter));
+      : sections.map((section) => filterSection(section, selectedProjects));
 
   if (groupBy === "status") {
     const byBucket = new Map<StatusBucket, ThreadNode[]>();
@@ -119,9 +119,9 @@ export function regroup(input: RegroupInput): Section[] {
     // Drop sections the filter emptied, but keep an empty workspace the user
     // has actually created — it is a drop target, not noise.
     const kept =
-      projectFilter === null
+      selectedProjects.size === 0
         ? active
-        : active.filter((section) => section.threadCount > 0);
+        : active.filter((section) => section.groups.length > 0);
     return [...kept, ...trailing];
   }
 
@@ -143,7 +143,6 @@ export function regroup(input: RegroupInput): Section[] {
     }
   }
   const byProjectSections = [...byProject.entries()]
-    .filter(([, entry]) => entry.nodes.length > 0)
     .sort((a, b) => a[1].projectName.localeCompare(b[1].projectName))
     .map(([projectId, entry]) =>
       flatSection(projectSectionId(projectId), entry.projectName, entry.nodes),
@@ -187,9 +186,9 @@ function push<K>(map: Map<K, ThreadNode[]>, key: K, node: ThreadNode): void {
   else bucket.push(node);
 }
 
-function filterSection(section: Section, projectId: string): Section {
+function filterSection(section: Section, projectIds: ReadonlySet<string>): Section {
   const groups = section.groups.filter(
-    (group) => group.projectId === projectId,
+    (group) => projectIds.has(group.projectId),
   );
   return {
     ...section,

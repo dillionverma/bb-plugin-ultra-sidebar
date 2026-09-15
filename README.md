@@ -10,6 +10,7 @@ A plugin for [BB](https://getbb.app).
 - **Act in batches.** Multi-select, drag, reorder, snooze, and mark work done. Undo and redo organization changes.
 - **Stay on the keyboard.** Move rows with Alt+↑/↓; use shortcuts and context menus without opening every thread.
 - **Review in context.** See branches, diffs, PRs, checks, agent activity, and stack relationships from the sidebar.
+- **Know the project at a glance.** Project headings and rows show each project's own icon or logo, found the same way the homepage plugin finds it.
 
 ## Install
 
@@ -40,6 +41,23 @@ bb plugin build .
 ```
 
 Focused fixes and reproducible bug reports are welcome. Include BB version, platform, and steps to reproduce.
+
+## Sidebar filters
+
+The left side of the toolbar has a workspace picker and a searchable project
+picker. Choose All workspaces, one workspace, or Unassigned. Projects can be
+selected together; the picker stays open until Done. All projects or Clear
+removes the project filter. Changing workspace resets the project selection.
+
+Filters apply to every grouping mode, to scheduled tasks, and to the Snoozed
+dock. A thread explicitly
+filed in a workspace follows that placement, including its subagent tree.
+Schedules follow their project's workspace. Empty projects remain available in
+the picker and in project grouping. An empty result offers Clear filters.
+
+Selections are local to each browser, survive reloads, and do not change project
+or thread membership. Existing single-project preferences carry forward. Deleted
+workspace or project selections fall back to the remaining valid selection.
 
 ## Compatibility
 

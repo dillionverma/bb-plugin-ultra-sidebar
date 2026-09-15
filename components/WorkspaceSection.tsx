@@ -16,10 +16,9 @@ import type { PullRequestMap } from "@/hooks/useThreadPullRequests";
 import { guardHandle } from "@/hooks/useSidebarDnd";
 import { sectionKey, sortableId, type DndData, type DropZone } from "@/lib/dnd";
 import { isSyntheticSectionId } from "@/lib/regroup";
-import { useNativeSubagents } from "@/hooks/useNativeSubagents";
 import { useSidebar } from "./sidebar-context";
 import { ThreadRow } from "./ThreadRow";
-import { NativeSubagentRow } from "./NativeSubagentRow";
+import { ProjectIcon } from "./ProjectIcon";
 import { ProjectContextMenu, WorkspaceContextMenu } from "./RowContextMenu";
 import { RowDropDecor, SectionDropDecor } from "./drag-state-context";
 import { StatusIcon } from "./StatusIcon";
@@ -97,10 +96,7 @@ function SubtreeChildren({
   pullRequests,
   sectionLabel = null,
 }: SubtreeProps) {
-  // Rendered only while the parent is expanded, which is exactly when the
-  // list is worth following.
-  const agents = useNativeSubagents(node.thread.id);
-  if (node.children.length === 0 && agents.length === 0) return null;
+  if (node.children.length === 0) return null;
   return (
     <ul
       className="bb-ws-subtree"
@@ -120,11 +116,6 @@ function SubtreeChildren({
           pullRequests={pullRequests}
           sectionLabel={sectionLabel}
         />
-      ))}
-      {agents.map((agent) => (
-        <li key={agent.id}>
-          <NativeSubagentRow agent={agent} depth={node.depth + 1} />
-        </li>
       ))}
     </ul>
   );
@@ -315,9 +306,10 @@ const ProjectGroupView = memo(function ProjectGroupView({
                 !isCollapsed && "rotate-90",
               )}
             />
-            <Icon
-              name={group.isPersonal ? "Folder02" : "Folder"}
-              className="size-3 shrink-0 opacity-70"
+            <ProjectIcon
+              projectId={group.projectId}
+              isPersonal={group.isPersonal}
+              className="size-3.5 opacity-80"
             />
             <span className="min-w-0 truncate">
               {group.isForeign ? `from ${group.name}` : group.name}
@@ -489,7 +481,7 @@ export function WorkspaceSection({
       {isCollapsed ? null : section.groups.length === 0 ? (
         sectionBucket !== null ? null : (
           <p className="px-3 py-1 text-xs text-muted-foreground/70">
-            {isUnassigned
+            {section.flat ? "No threads yet." : isUnassigned
               ? "Everything is filed."
               : "Drop a project or thread here."}
           </p>

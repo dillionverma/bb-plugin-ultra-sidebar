@@ -14,6 +14,7 @@ export const COLLAPSED_SECTIONS_KEY = `${PREFIX}:collapsed-sections:v2`;
 export const EXPANDED_SUBTREES_KEY = `${PREFIX}:expanded-subtrees:v1`;
 export const ROW_DETAILS_KEY = `${PREFIX}:row-details:v1`;
 export const COMPACT_ROWS_KEY = `${PREFIX}:compact-rows:v1`;
+export const PROJECT_ICONS_KEY = `${PREFIX}:project-icons:v1`;
 // Keyed by "<workspaceId>/<projectId>": the same project can appear in more
 // than one section (owned in one, foreign in another) and each collapses
 // independently.

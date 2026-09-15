@@ -1,5 +1,4 @@
 import { ThreadQueueProvider } from "../hooks/useThreadQueue";
-import { NativeSubagentsProvider } from "../hooks/useNativeSubagents";
 import { useThreadDiffs } from "../hooks/useThreadDiffs";
 import { ThreadDiffsContext } from "./ThreadWorkSummary";
 import { SidebarInteractions, useSidebarSelection } from "./SidebarInteractions";
@@ -22,7 +21,7 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { resolveTree, type ResolvedTree, type ThreadNode } from "@/lib/resolve";
 import { moveId, type DropTarget } from "@/lib/order";
-import type { ItemRef } from "@/lib/types";
+import { UNASSIGNED_ID, type ItemRef } from "@/lib/types";
 import { sortableId } from "@/lib/dnd";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useSidebarDnd, type DropOutcome } from "@/hooks/useSidebarDnd";
@@ -33,6 +32,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { useThreadExecution } from "@/hooks/useThreadExecution";
+import { useProjectArtwork } from "@/hooks/useProjectArtwork";
 import { useThreadPullRequests } from "@/hooks/useThreadPullRequests";
 import { useEnvironmentLocations } from "@/hooks/useEnvironmentLocations";
 import {
@@ -43,12 +43,13 @@ import {
 } from "@/components/ui/tooltip";
 import { isSyntheticSectionId, regroup, type GroupBy } from "@/lib/regroup";
 import { ViewOptions } from "./ViewOptions";
+import { SidebarFilters } from "./SidebarFilters";
+import { useSidebarFilters } from "@/hooks/useSidebarFilters";
 import {
   COMPACT_ROWS_KEY,
   GROUP_BY_KEY,
-  PROJECT_FILTER_KEY,
+  PROJECT_ICONS_KEY,
   usePersistedChoice,
-  usePersistedValue,
   COLLAPSED_PROJECTS_KEY,
   COLLAPSED_SECTIONS_KEY,
   EXPANDED_SUBTREES_KEY,
@@ -63,7 +64,7 @@ import {
   type SidebarContextValue,
 } from "./sidebar-context";
 import { DragStateProvider } from "./drag-state-context";
-import { ScheduledSection } from "./ScheduledSection";
+import { SidebarDock } from "./SidebarDock";
 import { WorkspaceSection } from "./WorkspaceSection";
 import { ErrorBoundary } from "./ErrorBoundary";
 import {
@@ -84,6 +85,7 @@ function SidebarBody(props: PluginThreadListProps) {
   const expandedSubtrees = usePersistedSet(EXPANDED_SUBTREES_KEY);
   const collapsedProjects = usePersistedSet(COLLAPSED_PROJECTS_KEY);
   const [compactRows, setCompactRows] = usePersistedFlag(COMPACT_ROWS_KEY, true);
+  const [projectIcons, setProjectIcons] = usePersistedFlag(PROJECT_ICONS_KEY, true);
   const [showArchived, setShowArchived] = useState(false);
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [groupBy, setGroupBy] = usePersistedChoice<GroupBy>(
@@ -91,11 +93,30 @@ function SidebarBody(props: PluginThreadListProps) {
     "status",
     ["status", "workspace", "project"],
   );
-  const [projectFilter, setProjectFilter] =
-    usePersistedValue(PROJECT_FILTER_KEY);
+  const filters = useSidebarFilters();
   const [rowDetails, setRowDetail] = usePersistedDetails(ROW_DETAILS_KEY);
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState("");
+
+  // The clock the resolver compares snoozes against. It only moves when a
+  // snooze is due to end, so a thread comes back at its wake time without the
+  // whole list re-rendering on a timer.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const now = Date.now();
+    let next = Infinity;
+    for (const entry of workspaces.state.lifecycle) {
+      if (entry.snoozedUntil !== null && entry.snoozedUntil > now) {
+        next = Math.min(next, entry.snoozedUntil);
+      }
+    }
+    if (!Number.isFinite(next)) return;
+    const timer = setTimeout(
+      () => setClock(Date.now()),
+      Math.min(next - now + 50, 2_147_000_000),
+    );
+    return () => clearTimeout(timer);
+  }, [workspaces.state.lifecycle, clock]);
 
   const tree: ResolvedTree = useMemo(
     () =>
@@ -107,6 +128,7 @@ function SidebarBody(props: PluginThreadListProps) {
         assignments: workspaces.state.assignments,
         lifecycle: workspaces.state.lifecycle,
         showArchived,
+        now: clock,
       }),
     [
       host.status,
@@ -116,8 +138,47 @@ function SidebarBody(props: PluginThreadListProps) {
       workspaces.state.assignments,
       workspaces.state.lifecycle,
       showArchived,
+      clock,
     ],
   );
+
+  // A snoozed thread that asks for a person or starts working is already
+  // back in the list (see wakesEarly). Clear its stored snooze too, or it
+  // would vanish again the moment it went quiet, and say why it came back.
+  const workspacesRef = useRef(workspaces);
+  workspacesRef.current = workspaces;
+  const wakeNotified = useRef(new Set<string>());
+  useEffect(() => {
+    if (tree.wokenEarly.length === 0) return;
+    workspacesRef.current.wakeEarly(tree.wokenEarly);
+    for (const id of tree.wokenEarly) {
+      if (wakeNotified.current.has(id)) continue;
+      wakeNotified.current.add(id);
+      const thread = host.threads.find((candidate) => candidate.id === id);
+      const title = thread?.title ?? thread?.titleFallback ?? "A snoozed thread";
+      toast.info(`${title} woke early: it needs you or is working`, {
+        id: `sidebar-wake-${id}`,
+      });
+    }
+  }, [tree.wokenEarly, host.threads]);
+
+  const workspaceFilter = filters.workspaceId === UNASSIGNED_ID || workspaces.state.workspaces.some(workspace => workspace.id === filters.workspaceId)
+    ? filters.workspaceId : null;
+  const workspaceSections = tree.sections.filter(section => workspaceFilter === null || (section.workspaceId ?? UNASSIGNED_ID) === workspaceFilter);
+  const availableProjectIds = new Set(workspaceSections.flatMap(section => section.groups.map(group => group.projectId)));
+  const availableProjects = host.projects.filter(project => availableProjectIds.has(project.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const projectIds = filters.projectIds.filter(id => availableProjectIds.has(id));
+  const hasFilters = workspaceFilter !== null || projectIds.length > 0;
+  const scheduledProjectIds = hasFilters
+    ? [...new Set(workspaceSections.flatMap(section => section.groups
+        .filter(group => !group.isForeign && (projectIds.length === 0 || projectIds.includes(group.projectId)))
+        .map(group => group.projectId)))]
+    : null;
+  // Snoozed threads obey the same filters as the list they left.
+  const snoozedEntries = tree.snoozed.filter(entry =>
+    (workspaceFilter === null || (entry.workspaceId ?? UNASSIGNED_ID) === workspaceFilter)
+    && (projectIds.length === 0 || projectIds.includes(entry.thread.projectId)));
 
   const treeRef = useRef(tree);
   treeRef.current = tree;
@@ -127,6 +188,9 @@ function SidebarBody(props: PluginThreadListProps) {
     for (const project of host.projects) byId.set(project.id, project.name);
     return byId;
   }, [host.projects]);
+  // Icons and logos found in each project's files; a search per project,
+  // once per window, and only while the option is on.
+  const projectArtwork = useProjectArtwork(host.projects, projectIcons);
 
   const manualStatusById = useMemo(() => {
     const byId = new Map<string, ManualStatus>();
@@ -432,6 +496,8 @@ function SidebarBody(props: PluginThreadListProps) {
       rowDetails,
       projectNameOf: (projectId: string) =>
         projectNameById.get(projectId) ?? "",
+      artworkOf: (projectId: string) =>
+        projectArtwork.get(projectId) ?? null,
       locationOf: (environmentId: string) =>
         locations.get(environmentId) ?? null,
       openFolder,
@@ -565,9 +631,9 @@ function SidebarBody(props: PluginThreadListProps) {
   }
 
   const grouped = regroup({
-    sections: tree.sections,
+    sections: workspaceSections,
     groupBy,
-    projectFilter,
+    projectIds,
     bucketOf: (node) =>
       statusBucket(
         manualStatusById.get(node.thread.id) ?? null,
@@ -597,7 +663,6 @@ function SidebarBody(props: PluginThreadListProps) {
     <SidebarContext.Provider value={contextValue}>
       <ThreadDiffsContext.Provider value={threadDiffs}>
       <ThreadQueueProvider>
-      <NativeSubagentsProvider>
       <DndContext {...dnd.contextProps}>
         <DragStateProvider value={dnd.state}>
           <TooltipProvider delayDuration={400} skipDelayDuration={200}>
@@ -625,8 +690,9 @@ function SidebarBody(props: PluginThreadListProps) {
               {/* bb keeps the New-thread button, the search action, the plugin nav
             rows and the footer; a replaced list owns the scroll area only, so
             our own controls belong at the top of it. */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1 pb-2">
-                <div className="sticky top-0 z-10 flex items-center gap-0.5 bg-sidebar px-1 py-1.5">
+              <div className="bb-ws-body flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="bb-ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-1 pb-2">
+                <div className="bb-ws-toolbar sticky top-0 z-10 flex items-center gap-0.5 bg-sidebar px-1 py-1.5">
                   {isCreating ? (
                     <input
                       value={newName}
@@ -646,6 +712,14 @@ function SidebarBody(props: PluginThreadListProps) {
                     />
                   ) : (
                     <>
+                      <SidebarFilters
+                        workspaces={workspaces.state.workspaces}
+                        workspaceId={workspaceFilter}
+                        onWorkspaceChange={filters.setWorkspace}
+                        projects={availableProjects}
+                        projectIds={projectIds}
+                        onProjectsChange={filters.setProjects}
+                      />
                       {groupBy === "workspace" ? (
                         <ControlButton
                           icon="Plus"
@@ -653,9 +727,10 @@ function SidebarBody(props: PluginThreadListProps) {
                           onClick={() => setIsCreating(true)}
                         />
                       ) : null}
-                      <span className="flex-1" />
                       <button
                         type="button"
+                        aria-label="New thread"
+                        title="New thread"
                         className="mr-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => {
                           const event = new Event("quick-thread:open", { cancelable: true });
@@ -666,7 +741,7 @@ function SidebarBody(props: PluginThreadListProps) {
                         }}
                       >
                         <Icon name="Plus" className="size-3.5" />
-                        New thread
+                        <span className="bb-ws-new-thread-label">New thread</span>
                       </button>
                       <SelectionToggle />
                       <ViewOptions
@@ -674,11 +749,10 @@ function SidebarBody(props: PluginThreadListProps) {
                         onOpenChange={setViewOptionsOpen}
                         groupBy={groupBy}
                         onGroupByChange={setGroupBy}
-                        projectFilter={projectFilter}
-                        onProjectFilterChange={setProjectFilter}
-                        projects={host.projects}
                         compactRows={compactRows}
                         onCompactRowsChange={setCompactRows}
+                        projectIcons={projectIcons}
+                        onProjectIconsChange={setProjectIcons}
                         rowDetails={rowDetails}
                         onRowDetailChange={setRowDetail}
                         showArchived={showArchived}
@@ -725,20 +799,19 @@ function SidebarBody(props: PluginThreadListProps) {
                   ))}
                 </SortableContext>
 
-                <ScheduledSection projectFilter={projectFilter} />
-
-                {tree.sections.length === 1 &&
-                tree.sections[0]!.groups.length === 0 ? (
-                  <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-                    No threads yet.
-                  </p>
-                ) : null}
+                {visibleSections.every(section => section.threadCount === 0) && (
+                  <div className="px-2 py-4 text-center text-xs text-muted-foreground" role="status">
+                    <p>{hasFilters ? "No threads match these filters." : snoozedEntries.length > 0 ? "Everything is snoozed." : "No threads yet."}</p>
+                    {hasFilters && <button type="button" className="mt-2 rounded px-2 py-1 text-foreground underline underline-offset-2 hover:bg-accent" onClick={filters.clear}>Clear filters</button>}
+                  </div>
+                )}
+              </div>
+              <SidebarDock snoozed={snoozedEntries} projectIds={scheduledProjectIds} />
               </div>
             </SidebarInteractions>
           </TooltipProvider>
         </DragStateProvider>
       </DndContext>
-    </NativeSubagentsProvider>
     </ThreadQueueProvider>
     </ThreadDiffsContext.Provider>
     </SidebarContext.Provider>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRealtimeConnectionState, useRpc } from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
 import type { rpcContract } from "../server";
-import type { ScheduledTasksResult } from "../lib/scheduled-tasks";
+import type { ScheduledTask, ScheduledTasksResult } from "../lib/scheduled-tasks";
 
 export function useScheduledTasks() {
   const rpc = useRpc<typeof rpcContract>();
@@ -26,5 +27,23 @@ export function useScheduledTasks() {
     void read();
     return () => { disposed = true; clearTimeout(timer); };
   }, [rpc, connection, generation]);
-  return { value, refresh };
+  // Each action re-reads straight after, so the row reflects the new state
+  // (Running, Paused) without waiting for the next poll.
+  const act = useCallback(async (label: string, work: () => Promise<unknown>) => {
+    try {
+      await work();
+      toast.success(label, { id: "sidebar-action" });
+    } catch (cause: unknown) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      toast.error(`${label} failed: ${message}`, { id: "sidebar-action" });
+    } finally {
+      refresh();
+    }
+  }, [refresh]);
+  const run = useCallback((task: ScheduledTask) =>
+    act(`Started ${task.name}`, () => rpc.call("scheduledTasks.run", { projectId: task.projectId, automationId: task.id })), [act, rpc]);
+  const setEnabled = useCallback((task: ScheduledTask, enabled: boolean) =>
+    act(enabled ? `Resumed ${task.name}` : `Paused ${task.name}`,
+      () => rpc.call("scheduledTasks.setEnabled", { projectId: task.projectId, automationId: task.id, enabled })), [act, rpc]);
+  return { value, refresh, run, setEnabled };
 }

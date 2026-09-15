@@ -128,6 +128,7 @@ async function mount(options: {
       rpc: {
         "threads.title": input => options.threads.find(t => t.id === (input as {threadId:string}).threadId)?.title ?? null,
         "threads.restoreTitle": () => null,
+        "projects.artwork": () => ({ entries: [] }),
         "workspaces.state": () => live,
         "workspaces.edit": (input) => {
           const { before, after } = input as {
@@ -184,6 +185,67 @@ describe("workspace thread list", () => {
     expect(alpha.textContent).toContain("t1");
     expect(alpha.textContent).not.toContain("t2");
     expect(slot.getByText("Unassigned")).toBeTruthy();
+  });
+
+  it("draws a project's own artwork on its heading and on rows that name it", async () => {
+    const glyph = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0"/></svg>';
+    const slot = await mount({
+      threads: [
+        thread({ id: "t1", projectId: "p1" }),
+        thread({ id: "t2", projectId: "p2" }),
+      ],
+      rpc: {
+        "projects.artwork": (input) => {
+          expect((input as { projectIds: string[] }).projectIds.sort()).toEqual(["p1", "p2"]);
+          return {
+            entries: [
+              { projectId: "p1", kind: "glyph", svg: glyph },
+              { projectId: "p2", kind: "image" },
+            ],
+          };
+        },
+      },
+    });
+
+    // Re-query each time: the list is rebuilt once the store loads, and the
+    // artwork answer lands around the same moment.
+    const projectRow = (name: string) => slot.getByText(name).closest("li")!;
+    await waitFor(() => {
+      expect(projectRow("Alpha").querySelector('[data-project-artwork="glyph"]')).toBeTruthy();
+    });
+    expect(projectRow("Alpha").querySelector('[data-project-artwork="folder"]')).toBeNull();
+
+    const beta = projectRow("Beta");
+    const image = beta.querySelector<HTMLImageElement>('img[data-project-artwork="image"]')!;
+    expect(image.getAttribute("src")).toBe(
+      "/api/v1/plugins/workspace-sidebar/http/project-icon?projectId=p2",
+    );
+
+    // A route that has stopped answering must not leave a broken image.
+    fireEvent.error(image);
+    expect(beta.querySelector('[data-project-artwork="folder"]')).toBeTruthy();
+  });
+
+  it("keeps the folder glyph and skips the lookup when project icons are off", async () => {
+    window.localStorage.setItem("bb-workspace-sidebar:project-icons:v1", "false");
+    const slot = await mount({
+      threads: [thread({ id: "t1", projectId: "p1" })],
+      rpc: {
+        "projects.artwork": () => ({ entries: [{ projectId: "p1", kind: "image" }] }),
+      },
+    });
+
+    const alpha = slot.getByText("Alpha").closest("li")!;
+    expect(alpha.querySelector('[data-project-artwork="folder"]')).toBeTruthy();
+    expect(
+      slot.inspection.rpcCalls.filter((call) => call.method === "projects.artwork"),
+    ).toHaveLength(0);
+
+    fireEvent.click(slot.getByLabelText("View options"));
+    fireEvent.click(await slot.findByLabelText("Project icons"));
+    await waitFor(() => {
+      expect(alpha.querySelector('[data-project-artwork="image"]')).toBeTruthy();
+    });
   });
 
   // The highest-value assertion in this suite. bb's thread shortcuts find rows
@@ -1218,4 +1280,160 @@ describe("thread handoff", () => {
     expect(options).toHaveBeenCalledTimes(2);
   });
 
+});
+
+describe("sidebar workspace and project filters", () => {
+  const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", originalScrollIntoView);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  });
+
+  it.each(["status", "workspace", "project"] as const)("filters resolved workspace membership in %s grouping", async mode => {
+    const slot = await mount({ mode, threads: [
+      thread({ id: "alpha-thread", projectId: "p1" }),
+      thread({ id: "beta-thread", projectId: "p2" }),
+      thread({ id: "detached-thread", projectId: "p1" }),
+    ], workspaceState: { ...state, assignments: [...state.assignments, { kind: "thread", refId: "detached-thread", workspaceId: null, sortIndex: 0 }] } });
+    fireEvent.click(slot.getByRole("button", { name: "Filter by workspace: All workspaces" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Client work" }));
+    expect(slot.getByText("alpha-thread")).toBeTruthy();
+    expect(slot.queryByText("beta-thread")).toBeNull();
+    expect(slot.queryByText("detached-thread")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Filter by workspace: Client work" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Unassigned" }));
+    expect(slot.queryByText("alpha-thread")).toBeNull();
+    expect(slot.getByText("beta-thread")).toBeTruthy();
+    expect(slot.getByText("detached-thread")).toBeTruthy();
+  });
+
+  it("searches and selects multiple projects without closing the picker", async () => {
+    const slot = await mount({ mode: "status", threads: [thread({ id: "alpha-thread", projectId: "p1" }), thread({ id: "beta-thread", projectId: "p2" })] });
+    fireEvent.click(slot.getByRole("button", { name: "Filter by project: All projects" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Alpha" }));
+    expect(slot.getByText("alpha-thread")).toBeTruthy();
+    expect(slot.queryByText("beta-thread")).toBeNull();
+    expect(slot.getByRole("option", { name: "Alpha" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.change(slot.getByPlaceholderText("Search projects…"), { target: { value: "Beta" } });
+    expect(slot.queryByRole("option", { name: "Alpha" })).toBeNull();
+    fireEvent.click(slot.getByRole("option", { name: "Beta" }));
+    expect(slot.getByText("alpha-thread")).toBeTruthy();
+    expect(slot.getByText("beta-thread")).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Filter by project: 2 projects" })).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Done selecting projects" }));
+    expect(slot.queryByPlaceholderText("Search projects…")).toBeNull();
+    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+  });
+
+  it("scopes project choices and schedules when switching workspace", async () => {
+    window.localStorage.setItem("bb-workspace-sidebar:scheduled-expanded:v1", "true");
+    const entries = projects.map(project => ({ id: project.id, projectId: project.id, projectName: project.name, name: `${project.name} schedule`, enabled: true, trigger: null, nextRunAt: null, lastRunStatus: null, lastError: null, threadId: null, problem: null }));
+    const slot = await mount({ mode: "status", threads: [thread({ id: "alpha-thread", projectId: "p1" }), thread({ id: "beta-thread", projectId: "p2" })], rpc: { "scheduledTasks.list": () => ({ availability: "ready", entries }) } });
+    fireEvent.click(slot.getByRole("button", { name: "Filter by project: All projects" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Beta" }));
+    fireEvent.click(slot.getByRole("button", { name: "Done selecting projects" }));
+    fireEvent.click(slot.getByRole("button", { name: "Filter by workspace: All workspaces" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Client work" }));
+    expect(slot.getByText("alpha-thread")).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Filter by project: All projects" })).toBeTruthy();
+    expect(await slot.findByText("Alpha schedule")).toBeTruthy();
+    expect(slot.queryByText("Beta schedule")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Filter by project: All projects" }));
+    expect(await slot.findByRole("option", { name: "Alpha" })).toBeTruthy();
+    expect(slot.queryByRole("option", { name: "Beta" })).toBeNull();
+  });
+
+  it("keeps a snoozed thread reachable in the dock and wakes it from there", async () => {
+    const until = Date.now() + 60 * 60 * 1000;
+    const slot = await mount({
+      mode: "status",
+      threads: [thread({ id: "parked", projectId: "p1", title: "Parked work" }), thread({ id: "live", projectId: "p1" })],
+      workspaceState: { ...state, lifecycle: [{ threadId: "parked", status: null, snoozedUntil: until }] },
+    });
+    expect(slot.getByText("live")).toBeTruthy();
+    const dock = slot.getByLabelText("Snoozed threads");
+    expect(within(dock).getByText("Parked work")).toBeTruthy();
+    expect(within(dock).getByText(/^Until /)).toBeTruthy();
+    // Not in the list itself: the dock is the only place it appears.
+    expect(slot.getAllByText("Parked work")).toHaveLength(1);
+    expect(slot.queryByLabelText("Wake all snoozed threads")).toBeNull();
+
+    fireEvent.click(within(dock).getByText("Parked work"));
+    expect(slot.inspection.sidebarActionCalls).toContainEqual(expect.objectContaining({ method: "open", threadId: "parked", options: { split: false } }));
+
+    fireEvent.click(within(dock).getByRole("button", { name: "Wake Parked work" }));
+    await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({
+      method: "workspaces.edit",
+      input: expect.objectContaining({ after: expect.objectContaining({ lifecycle: [{ threadId: "parked", status: null, snoozedUntil: null }] }) }),
+    })));
+    await waitFor(() => expect(slot.queryByLabelText("Snoozed threads")).toBeNull());
+    expect(slot.getAllByText("Parked work").length).toBeGreaterThan(0);
+  });
+
+  it("wakes a snoozed thread early when it needs a person, without a toast undo", async () => {
+    const until = Date.now() + 60 * 60 * 1000;
+    const slot = await mount({
+      mode: "status",
+      threads: [thread({ id: "asks", projectId: "p1", title: "Asks a question", hasPendingInteraction: true, indicator: "waiting-for-input" })],
+      workspaceState: { ...state, lifecycle: [{ threadId: "asks", status: null, snoozedUntil: until }] },
+    });
+    expect(slot.queryByLabelText("Snoozed threads")).toBeNull();
+    expect(slot.getByText("Asks a question")).toBeTruthy();
+    await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({
+      method: "workspaces.edit",
+      input: expect.objectContaining({ after: expect.objectContaining({ lifecycle: [{ threadId: "asks", status: null, snoozedUntil: null }] }) }),
+    })));
+  });
+
+  it("opens schedule details on click, with run and pause actions", async () => {
+    window.localStorage.setItem("bb-workspace-sidebar:scheduled-expanded:v1", "true");
+    const entry = { id: "auto-1", projectId: "p1", projectName: "Alpha", name: "Nightly triage", enabled: true,
+      trigger: { triggerType: "schedule" as const, cron: "0 9 * * *", timezone: "UTC" }, nextRunAt: Date.now() + 3_600_000,
+      lastRunStatus: null, lastError: null, threadId: null, problem: null };
+    const slot = await mount({
+      mode: "status",
+      threads: [thread({ id: "t1", projectId: "p1" })],
+      rpc: {
+        "scheduledTasks.list": () => ({ availability: "ready", entries: [entry] }),
+        "scheduledTasks.run": () => ({ ok: true }),
+        "scheduledTasks.setEnabled": () => ({ ok: true }),
+      },
+    });
+    const row = await slot.findByRole("button", { name: "Schedule details: Nightly triage" });
+    fireEvent.click(row);
+    fireEvent.click(await slot.findByRole("button", { name: "Run now" }));
+    await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({
+      method: "scheduledTasks.run", input: { projectId: "p1", automationId: "auto-1" },
+    })));
+    fireEvent.click(await slot.findByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({
+      method: "scheduledTasks.setEnabled", input: { projectId: "p1", automationId: "auto-1", enabled: false },
+    })));
+  });
+
+  it("keeps empty projects available and provides a way to clear empty results", async () => {
+    const slot = await mount({ mode: "project", threads: [thread({ id: "alpha-thread", projectId: "p1" })] });
+    expect(slot.getByText("Beta")).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Filter by project: All projects" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Beta" }));
+    fireEvent.click(slot.getByRole("button", { name: "Done selecting projects" }));
+    expect(slot.queryByText("alpha-thread")).toBeNull();
+    expect(slot.getByText("No threads match these filters.")).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Clear filters" }));
+    expect(slot.getByText("alpha-thread")).toBeTruthy();
+  });
+
+  it("does not hide the sidebar behind deleted stored filters", async () => {
+    window.localStorage.setItem("bb-workspace-sidebar:filters:v1", JSON.stringify({ workspaceId: "deleted-workspace", projectIds: ["deleted-project"] }));
+    const slot = await mount({ threads: [thread({ id: "alpha-thread", projectId: "p1" }), thread({ id: "beta-thread", projectId: "p2" })] });
+    expect(slot.getByText("alpha-thread")).toBeTruthy();
+    expect(slot.getByText("beta-thread")).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Filter by workspace: All workspaces" })).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Filter by project: All projects" })).toBeTruthy();
+  });
 });

@@ -43,3 +43,13 @@
   .bb-ws-selecting .bb-ws-checkbox-gutter [role="checkbox"]::after { content: ""; position: absolute; inset: -14px; }
   .bb-ws-selecting .bb-ws-mainline { min-height: 44px; }
 }
+
+.bb-ws-toolbar { container-type: inline-size; }
+.bb-ws-toolbar > button { flex-shrink: 0; }
+@container (max-width: 360px) {
+  .bb-ws-new-thread-label { display: none; }
+}
+
+/* The dock under the list: scheduled automations and snoozed threads. Empty
+   sections render nothing, so an empty dock takes no space at all. */
+.bb-ws-dock:not(:empty) { border-top: 1px solid var(--ws-line); padding: 4px 4px 2px; background: var(--sidebar); }

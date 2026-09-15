@@ -25,6 +25,7 @@ vi.mock("@get-bb/plugin-sdk/app", () => {
 });
 vi.mock("./sidebar-context", () => ({
   useSidebar: () => ({
+    artworkOf: () => null,
     locationOf: () => ({ path: "/Users/test/src/bb", hostName: "mbp" }),
     openFolder: harness.openFolder,
     openThread: harness.openThread,

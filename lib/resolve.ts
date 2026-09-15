@@ -64,10 +64,25 @@ export interface Section {
   flat?: boolean;
 }
 
+/** A root thread parked until a wake time, with the workspace it would sit in. */
+export interface SnoozedEntry {
+  thread: PluginSidebarThread;
+  until: number;
+  workspaceId: string | null;
+}
+
 export interface ResolvedTree {
   sections: Section[];
   /** Assignments naming a project/thread the host no longer reports. */
   unknownAssignments: ItemRef[];
+  /** Roots hidden from the sections until their wake time, soonest first. */
+  snoozed: SnoozedEntry[];
+  /**
+   * Snoozed roots that came back early because they need a person or started
+   * working. They are already in the sections; the caller should clear their
+   * stored snooze so they do not vanish again the moment they go quiet.
+   */
+  wokenEarly: string[];
 }
 
 export interface ResolveInput {
@@ -85,7 +100,38 @@ export interface ResolveInput {
 const EMPTY_TREE: ResolvedTree = {
   sections: [],
   unknownAssignments: [],
+  snoozed: [],
+  wokenEarly: [],
 };
+
+const ATTENTION_INDICATORS = new Set(["waiting-for-input", "unread-error"]);
+const LIVE_INDICATORS = new Set([
+  "runtime",
+  "workflow",
+  "background-agent",
+  "background-command",
+  "plan-mode",
+  "goal",
+]);
+
+/**
+ * Snooze hides a thread that is waiting on nobody. The moment it asks for a
+ * person, fails, or starts working again it must come back: hiding live work
+ * or a raised hand is the one failure this feature cannot afford.
+ */
+export function wakesEarly(thread: PluginSidebarThread): boolean {
+  if (thread.hasPendingInteraction) return true;
+  if (ATTENTION_INDICATORS.has(thread.indicator)) return true;
+  if (LIVE_INDICATORS.has(thread.indicator)) return true;
+  const activity = thread.activity;
+  return (
+    activity.workflows > 0 ||
+    activity.backgroundAgents > 0 ||
+    activity.backgroundCommands > 0 ||
+    activity.planMode > 0 ||
+    activity.goals > 0
+  );
+}
 
 export function resolveTree(input: ResolveInput): ResolvedTree {
   // Never derive anything — least of all orphan candidates — from a snapshot
@@ -172,11 +218,14 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
 
   // A manual status (Backlog, Done, Canceled) is a grouping concern, not a
   // membership one, so it is left to regroup; only snoozing hides a thread.
-  const snoozedIds = new Set<string>();
+  const snoozedUntil = new Map<string, number>();
+  const wokenEarly: string[] = [];
   for (const entry of lifecycleById.values()) {
-    if (!visibleById.has(entry.threadId)) continue;
+    const thread = visibleById.get(entry.threadId);
+    if (thread === undefined) continue;
     if (entry.snoozedUntil !== null && entry.snoozedUntil > now) {
-      snoozedIds.add(entry.threadId);
+      if (wakesEarly(thread)) wokenEarly.push(thread.id);
+      else snoozedUntil.set(thread.id, entry.snoozedUntil);
     }
   }
 
@@ -184,14 +233,19 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
   // a subtree always follows its root, so a drag can never tear a subagent
   // away from the thread that spawned it.
   const rootsByWorkspace = new Map<string | null, PluginSidebarThread[]>();
+  const snoozed: SnoozedEntry[] = [];
   for (const thread of roots) {
-    // A snoozed thread is simply absent until its time comes.
-    if (snoozedIds.has(thread.id)) continue;
     const workspaceId = resolveThreadWorkspace(
       thread,
       threadWorkspace,
       projectWorkspace,
     );
+    // A snoozed thread leaves the sections and waits in the dock instead.
+    const until = snoozedUntil.get(thread.id);
+    if (until !== undefined) {
+      snoozed.push({ thread, until, workspaceId });
+      continue;
+    }
     const bucket = rootsByWorkspace.get(workspaceId);
     if (bucket === undefined) rootsByWorkspace.set(workspaceId, [thread]);
     else bucket.push(thread);
@@ -231,7 +285,10 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     }),
   );
 
-  return { sections, unknownAssignments };
+  snoozed.sort(
+    (a, b) => a.until - b.until || a.thread.id.localeCompare(b.thread.id),
+  );
+  return { sections, unknownAssignments, snoozed, wokenEarly };
 }
 
 /**

@@ -6,6 +6,7 @@ Built for extreme productivity across threads, agents, and projects. Keep parall
 - **Act in batches.** Multi-select, drag, reorder, snooze, and mark work done. Undo and redo organization changes.
 - **Stay on the keyboard.** Move rows with Alt+↑/↓; use shortcuts and context menus without opening every thread.
 - **Review in context.** See branches, diffs, PRs, checks, agent activity, and stack relationships from the sidebar.
+- **Know the project at a glance.** Project headings and rows show each project's own icon or logo.
 
 ## Requirements
 

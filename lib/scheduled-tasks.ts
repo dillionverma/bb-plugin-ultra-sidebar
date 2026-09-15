@@ -20,8 +20,8 @@ export interface ScheduledTasksResult {
 }
 
 /** Paused and invalid schedules stay inspectable; completed one-offs leave the upcoming list. */
-export function visibleScheduledTasks(entries: readonly ScheduledTask[], projectFilter?: string | null): ScheduledTask[] {
-  return entries.filter(task => (!projectFilter || task.projectId === projectFilter)
+export function visibleScheduledTasks(entries: readonly ScheduledTask[], projectIds: readonly string[] | null = null): ScheduledTask[] {
+  return entries.filter(task => (projectIds === null || projectIds.includes(task.projectId))
     && !(task.trigger?.triggerType === "once" && task.lastRunStatus === "succeeded" && task.nextRunAt === null))
     .sort((a, b) => {
       const aTime = a.enabled ? a.nextRunAt : null;

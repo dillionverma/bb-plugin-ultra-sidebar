@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { nextRunLabel, scheduleDescription, scheduleTime, visibleScheduledTasks, type ScheduledTask } from "./scheduled-tasks";
-import { createScheduledTasksReader } from "./scheduled-tasks.server";
+import { createScheduledTasksActions, createScheduledTasksReader } from "./scheduled-tasks.server";
 
 const now = Date.UTC(2026, 8, 15, 12);
 const task = (overrides: Partial<ScheduledTask> = {}): ScheduledTask => ({
@@ -14,7 +14,14 @@ afterEach(() => vi.useRealTimers());
 it("sorts upcoming work before paused items and filters projects", () => {
   const entries = [task({ id: "paused", enabled: false, nextRunAt: now }), task({ id: "later", nextRunAt: now + 100 }),
     task({ id: "first", nextRunAt: now }), task({ id: "other", projectId: "p2" })];
-  expect(visibleScheduledTasks(entries, "p1").map(item => item.id)).toEqual(["first", "later", "paused"]);
+  expect(visibleScheduledTasks(entries, ["p1"]).map(item => item.id)).toEqual(["first", "later", "paused"]);
+});
+
+it("includes multiple selected projects and hides schedules for an empty workspace", () => {
+  const entries = [task({ id: "a", projectId: "p1" }), task({ id: "b", projectId: "p2" }), task({ id: "c", projectId: "p3" })];
+  expect(visibleScheduledTasks(entries, ["p1", "p2"]).map(item => item.id)).toEqual(["a", "b"]);
+  expect(visibleScheduledTasks(entries, [])).toEqual([]);
+  expect(visibleScheduledTasks(entries, null)).toHaveLength(3);
 });
 
 it("retains failed and invalid schedules but removes completed one-offs", () => {
@@ -60,7 +67,7 @@ it("uses the public automations RPC and strips prompts from the sidebar response
   const { api, callRpc } = mockPlugins({ automations: [{ project: { id: "p1", name: "BB" }, automation: {
     ...task(), execution: { targetThreadId: "thread-1", prompt: "private instructions", script: "private script" },
   } }] });
-  const read = createScheduledTasksReader(api);
+  const read = createScheduledTasksReader(api).list;
   const result = await read();
   expect(callRpc).toHaveBeenCalledWith(expect.objectContaining({ pluginId: "automations", method: "automations_overview", input: null }));
   expect(result).toEqual({ availability: "ready", entries: [task({ threadId: "thread-1" })] });
@@ -70,12 +77,16 @@ it("uses the public automations RPC and strips prompts from the sidebar response
 it("deduplicates concurrent reads, expires cache and clears stale schedules on errors", async () => {
   vi.useFakeTimers();
   const { api, callRpc, list } = mockPlugins({ automations: [{ project: { id: "p1", name: "BB" }, automation: task() }] });
-  const read = createScheduledTasksReader(api);
+  const reader = createScheduledTasksReader(api);
+  const read = reader.list;
   const [first, second] = await Promise.all([read(), read()]);
   expect(first).toEqual(second);
   expect(callRpc).toHaveBeenCalledTimes(1);
   await read();
   expect(callRpc).toHaveBeenCalledTimes(1);
+  reader.invalidate();
+  await read();
+  expect(callRpc).toHaveBeenCalledTimes(2);
   await vi.advanceTimersByTimeAsync(10_001);
   callRpc.mockRejectedValue(new Error("offline"));
   list.mockResolvedValue({ plugins: [{ id: "automations", enabled: true }] });
@@ -85,7 +96,23 @@ it("deduplicates concurrent reads, expires cache and clears stale schedules on e
 it("hides missing or disabled automations without failing the sidebar", async () => {
   const { api, callRpc, list } = mockPlugins(null);
   callRpc.mockRejectedValue(new Error("not installed"));
-  expect(await createScheduledTasksReader(api)()).toEqual({ availability: "unavailable", entries: [] });
+  expect(await createScheduledTasksReader(api).list()).toEqual({ availability: "unavailable", entries: [] });
   list.mockResolvedValue({ plugins: [{ id: "automations", enabled: false }] });
-  expect(await createScheduledTasksReader(api)()).toEqual({ availability: "unavailable", entries: [] });
+  expect(await createScheduledTasksReader(api).list()).toEqual({ availability: "unavailable", entries: [] });
+});
+
+it("runs, pauses and resumes through the automations plugin and drops the cached overview", async () => {
+  const { api, callRpc } = mockPlugins({ automations: [] });
+  const invalidate = vi.fn();
+  const actions = createScheduledTasksActions(api, invalidate);
+  await actions.run({ projectId: "p1", automationId: "a1" });
+  expect(callRpc).toHaveBeenLastCalledWith(expect.objectContaining({ pluginId: "automations", method: "automations_run", input: { projectId: "p1", automationId: "a1" } }));
+  await actions.setEnabled({ projectId: "p1", automationId: "a1", enabled: false });
+  expect(callRpc).toHaveBeenLastCalledWith(expect.objectContaining({ method: "automations_pause" }));
+  await actions.setEnabled({ projectId: "p1", automationId: "a1", enabled: true });
+  expect(callRpc).toHaveBeenLastCalledWith(expect.objectContaining({ method: "automations_resume" }));
+  expect(invalidate).toHaveBeenCalledTimes(3);
+  callRpc.mockRejectedValueOnce(new Error("nope"));
+  await expect(actions.run({ projectId: "p1", automationId: "a1" })).rejects.toThrow("nope");
+  expect(invalidate).toHaveBeenCalledTimes(4);
 });

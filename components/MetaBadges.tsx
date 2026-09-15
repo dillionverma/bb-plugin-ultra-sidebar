@@ -75,15 +75,18 @@ export function LinkBadge({
 export function Badge({
   icon,
   label,
+  tip,
   className,
   maxWidth = "8rem",
 }: {
   icon: string;
   label: string;
+  /** What the hover says; omitted, the badge has no tooltip. */
+  tip?: ReactNode;
   className?: string;
   maxWidth?: string;
 }) {
-  return (
+  const badge = (
     <span
       className={cn(
         "flex min-w-0 shrink items-center gap-1 text-[11px] leading-4 text-muted-foreground",
@@ -95,6 +98,15 @@ export function Badge({
         {label}
       </span>
     </span>
+  );
+  if (tip === undefined) return badge;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6} className="max-w-[24rem] break-all">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -115,7 +127,7 @@ export function ProjectBadge({
   onOpenFolder?(): void;
 }) {
   if (folder == null || onOpenFolder === undefined) {
-    return <Badge icon="Folder" label={name} maxWidth="7rem" />;
+    return <Badge icon="Folder" label={name} tip={`Project · ${name}`} maxWidth="7rem" />;
   }
   return (
     <LinkBadge
@@ -138,7 +150,7 @@ export function BranchBadge({
   onOpenFolder?(): void;
 }) {
   if (folder == null || onOpenFolder === undefined) {
-    return <Badge icon="FolderGit" label={branch} />;
+    return <Badge icon="FolderGit" label={branch} tip={`Branch · ${branch}`} />;
   }
   return (
     <LinkBadge
@@ -151,11 +163,11 @@ export function BranchBadge({
 }
 
 export function MachineBadge({ name }: { name: string }) {
-  return <Badge icon="ComputerTerminal01" label={name} maxWidth="5rem" />;
+  return <Badge icon="ComputerTerminal01" label={name} tip={`Machine · ${name}`} maxWidth="5rem" />;
 }
 
 export function ModelBadge({ model }: { model: string }) {
-  return <Badge icon="Bot" label={shortenModel(model)} maxWidth="6rem" />;
+  return <Badge icon="Bot" label={shortenModel(model)} tip={`Model · ${model}`} maxWidth="6rem" />;
 }
 
 const MODEL_FAMILIES =
@@ -227,6 +239,7 @@ export function PullRequestBadge({
       <Badge
         icon={prIcon(pullRequest)}
         label={`#${pullRequest.number}`}
+        tip={`#${pullRequest.number} ${pullRequest.title} · ${attention.text}`}
         maxWidth="4rem"
         className={attention.className}
       />

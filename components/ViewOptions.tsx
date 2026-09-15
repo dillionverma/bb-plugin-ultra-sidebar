@@ -7,7 +7,6 @@
 // There is no "Sort by": within a group the order is always newest-created
 // first — a stack that never reshuffles under the cursor — and the manual
 // drag already covers the case where that is not what the user wants.
-import type { PluginSidebarProject } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -25,8 +24,6 @@ import {
 import { cn } from "@/lib/utils";
 import type { GroupBy } from "@/lib/regroup";
 import type { RowDetails } from "@/hooks/useViewState";
-
-const ALL_PROJECTS = "__all__";
 
 const DETAIL_LABELS: ReadonlyArray<[keyof RowDetails, string]> = [
   ["project", "Project"],
@@ -86,11 +83,10 @@ export function ViewOptions({
   onOpenChange,
   groupBy,
   onGroupByChange,
-  projectFilter,
-  onProjectFilterChange,
-  projects,
   compactRows,
   onCompactRowsChange,
+  projectIcons,
+  onProjectIconsChange,
   rowDetails,
   onRowDetailChange,
   showArchived,
@@ -102,11 +98,10 @@ export function ViewOptions({
   onOpenChange?(open: boolean): void;
   groupBy: GroupBy;
   onGroupByChange(next: GroupBy): void;
-  projectFilter: string | null;
-  onProjectFilterChange(next: string | null): void;
-  projects: readonly PluginSidebarProject[];
   compactRows: boolean;
   onCompactRowsChange(next: boolean): void;
+  projectIcons: boolean;
+  onProjectIconsChange(next: boolean): void;
   rowDetails: RowDetails;
   onRowDetailChange(detail: keyof RowDetails, on: boolean): void;
   showArchived: boolean;
@@ -114,9 +109,7 @@ export function ViewOptions({
   onCollapseAll(): void;
   onExpandAll(): void;
 }) {
-  // A filter that is on but out of sight is a trap; keep the button lit
-  // while anything is narrowing or widening the list beyond its default.
-  const isLit = projectFilter !== null || showArchived;
+  const isLit = showArchived;
   const visibleDetails = DETAIL_LABELS.filter(
     ([detail]) => !compactRows || detail === "machine",
   );
@@ -155,26 +148,6 @@ export function ViewOptions({
               </Select>
             </Row>
 
-            <Row label="Project">
-              <Select
-                value={projectFilter ?? ALL_PROJECTS}
-                onValueChange={(next) =>
-                  onProjectFilterChange(next === ALL_PROJECTS ? null : next)
-                }
-              >
-                <SelectTrigger className="h-7 w-full text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Row>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -187,6 +160,15 @@ export function ViewOptions({
             />
             <p className="text-[11px] leading-4 text-muted-foreground/70">
               Keep branch, model, and other metadata in thread details.
+            </p>
+            <Check
+              id="view-project-icons"
+              label="Project icons"
+              checked={projectIcons}
+              onChange={onProjectIconsChange}
+            />
+            <p className="text-[11px] leading-4 text-muted-foreground/70">
+              Use each project's own icon or logo where it has one.
             </p>
           </div>
 

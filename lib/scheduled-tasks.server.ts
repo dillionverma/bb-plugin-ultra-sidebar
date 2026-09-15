@@ -54,11 +54,37 @@ export function createScheduledTasksReader(plugins: BbPluginApi["sdk"]["plugins"
       }
     }
   }
-  return (): Promise<ScheduledTasksResult> => {
+  const list = (): Promise<ScheduledTasksResult> => {
     if (cached && Date.now() < expiresAt) return Promise.resolve(cached);
     if (pending) return pending;
     pending = read().then(result => { cached = result; expiresAt = Date.now() + 10_000; return result; })
       .finally(() => { pending = null; });
     return pending;
+  };
+  /** Forget the cached overview, so the next list reflects a run, pause or resume just made. */
+  const invalidate = () => { cached = null; expiresAt = 0; };
+  return { list, invalidate };
+}
+
+/** The automation the sidebar is acting on; the pair the automations plugin keys everything by. */
+export const scheduledTaskRefSchema = z.object({ projectId: z.string().min(1), automationId: z.string().min(1) });
+
+/**
+ * Run, pause or resume through the automations plugin. The sidebar never
+ * edits an automation's prompt or script; those stay in the Automations panel.
+ */
+export function createScheduledTasksActions(plugins: BbPluginApi["sdk"]["plugins"], invalidate: () => void) {
+  const call = async (method: "automations_run" | "automations_pause" | "automations_resume", input: { projectId: string; automationId: string }) => {
+    try {
+      await plugins.callRpc({ pluginId: "automations", method, input, outputSchema: z.unknown() });
+    } finally {
+      invalidate();
+    }
+    return { ok: true as const };
+  };
+  return {
+    run: (ref: { projectId: string; automationId: string }) => call("automations_run", ref),
+    setEnabled: ({ enabled, ...ref }: { projectId: string; automationId: string; enabled: boolean }) =>
+      call(enabled ? "automations_resume" : "automations_pause", ref),
   };
 }

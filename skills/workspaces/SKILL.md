@@ -68,3 +68,12 @@ the user's manual order and holds it there.
 - Do not reorganize a user's workspaces unasked. The grouping is theirs.
 - Do not `bb workspace rm` without `--move-to` or an explicit instruction to
   discard the grouping; without one of those the command refuses anyway.
+
+## Sidebar filtering
+
+The toolbar's left workspace picker narrows the sidebar to one workspace or
+Unassigned. Its project picker searches and selects multiple projects; All
+projects clears that selection. Switching workspace resets project selections.
+These per-browser filters persist across reloads, work in every grouping mode,
+and also narrow Scheduled. They do not change membership; use the commands above
+to move projects or threads between workspaces.

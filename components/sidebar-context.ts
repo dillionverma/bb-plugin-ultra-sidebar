@@ -13,6 +13,7 @@ export type ProviderInfo = ReturnType<
 import type { ItemRef, Workspace } from "../lib/types";
 import type { RowDetails } from "../hooks/useViewState";
 import type { EnvironmentLocation } from "../hooks/useEnvironmentLocations";
+import type { ProjectArtwork } from "../hooks/useProjectArtwork";
 import type { ManualStatus } from "../lib/status";
 
 export interface SidebarContextValue {
@@ -24,6 +25,8 @@ export interface SidebarContextValue {
   rowDetails: RowDetails;
   /** The host's name for a project, or "" when it no longer reports one. */
   projectNameOf(projectId: string): string;
+  /** A project's icon or logo, once found; null means the folder glyph. */
+  artworkOf(projectId: string): ProjectArtwork | null;
   /** The checkout directory behind an environment, once it has been fetched. */
   locationOf(environmentId: string): EnvironmentLocation | null;
   /** Reveal an environment's folder in the file manager, when it is on this machine. */
