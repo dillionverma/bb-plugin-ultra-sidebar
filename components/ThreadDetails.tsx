@@ -91,6 +91,7 @@ export function ThreadDetails({
   const modelLine = model === null ? null : (
     <span className="inline-flex min-w-0 flex-1 items-center gap-1.5" title={[model, reasoning].filter(Boolean).join(" · ")}>
       {provider === null ? <Icon name="Bot" aria-hidden className="size-3.5 shrink-0" /> : <ProviderIcon providerKind="agent" provider={provider} className="size-3.5 shrink-0" />}
+      <span className="sr-only">{execution?.model == null ? "Agent" : "Model"}: </span>
       <span className="min-w-0 truncate text-foreground/85">{model}</span>
       {reasoning ? <span className="shrink-0 text-muted-foreground">· {reasoning}</span> : null}
     </span>
@@ -110,7 +111,7 @@ export function ThreadDetails({
         if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) event.stopPropagation();
       }}
     >
-      <header className="flex min-w-0 items-start gap-2">
+      <div className="flex min-w-0 items-start gap-2">
         <h3 className="min-w-0 flex-1 break-words text-xs font-semibold leading-5 text-foreground [overflow-wrap:anywhere]">
           {thread.title ?? thread.titleFallback ?? "Untitled"}
         </h3>
@@ -120,19 +121,21 @@ export function ThreadDetails({
             title={status.detail}
           >{status.text}</span>
         )}
-      </header>
+      </div>
 
       {projectName !== "" || thread.host !== null || !inMotion ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground">
           {projectName === "" ? null : (
             <span className="inline-flex min-w-0 max-w-full items-center gap-1" title={`Project: ${projectName}`}>
               <Icon name="Folder" aria-hidden className="size-3 shrink-0" />
+              <span className="sr-only">Project: </span>
               <span className="truncate">{projectName}</span>
             </span>
           )}
           {thread.host === null ? null : (
             <span className="inline-flex min-w-0 max-w-full items-center gap-1" title={`Machine: ${thread.host.name}`}>
               <MachineIcon name={thread.host.name} className="size-3 shrink-0" />
+              <span className="sr-only">Machine: </span>
               <span className="truncate">{thread.host.name}</span>
             </span>
           )}
