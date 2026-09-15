@@ -1,0 +1,45 @@
+/* Follow BB's native chrome, with the sidebar's original Linear status colors. */
+.bb-workspace-sidebar {
+  --ws-selection-gutter: 26px;
+  --ws-line: color-mix(in srgb, var(--muted-foreground) 25%, transparent);
+  background: var(--sidebar);
+}
+.bb-workspace-sidebar,
+[data-bb-plugin="workspace-sidebar"][data-bb-portaled-overlay] {
+  --ws-goal: var(--primary);
+  --ws-attention: #f2994a;
+  --ws-success: #4cb782;
+  --ws-done: #5e6ad2;
+  --ws-danger: #eb5757;
+  --ws-working: #f2c94c;
+}
+.ws-tone-goal { color: var(--ws-goal, var(--primary)); }
+.ws-tone-attention { color: var(--ws-attention, #f2994a); }
+.bb-ws-your-turn { background: var(--ws-attention, #f2994a); color: #271a09; }
+.ws-tone-success { color: var(--ws-success, #4cb782); }
+.ws-tone-done { color: var(--ws-done, #5e6ad2); }
+.ws-tone-danger { color: var(--ws-danger, #eb5757); }
+.ws-tone-working { color: var(--ws-working, #f2c94c); }
+.bb-ws-row[data-selected="true"] { background: var(--accent); box-shadow: inset 0 0 0 1px var(--border); }
+.bb-ws-subtree > li { position: relative; }
+.bb-ws-subtree > li::before { content: ""; position: absolute; pointer-events: none; top: 0; bottom: 0; left: var(--ws-tree-left); border-left: 1px solid var(--ws-line); }
+.bb-ws-subtree > li:last-child::before { bottom: auto; height: 17px; width: 8px; border-bottom: 1px solid var(--ws-line); border-bottom-left-radius: 4px; }
+.bb-ws-subtree > li > .group\/selection-row { position: relative; }
+.bb-ws-project-threads { position: relative; margin-left: 10px; }
+.bb-ws-project-threads::before { content:""; position:absolute; left:0; top:0; bottom:8px; border-left:1px solid var(--ws-line); pointer-events:none; }
+.bb-ws-section-tree { position:relative; }
+.bb-ws-section-tree::before { content:""; position:absolute; left:4px; top:0; bottom:10px; border-left:1px solid var(--ws-line); pointer-events:none; }
+.bb-ws-subtree .bb-ws-subtree { --ws-tree-left: inherit; }
+.bb-ws-selecting .bb-ws-subtree > li::before { translate: var(--ws-selection-gutter) 0; }
+.bb-ws-selecting .bb-ws-project-threads::before { translate:var(--ws-selection-gutter) 0; }
+.bb-ws-selecting .bb-ws-section-tree::before { translate:var(--ws-selection-gutter) 0; }
+.bb-ws-selecting .bb-ws-row-action { visibility:hidden; pointer-events:none; }
+@media (pointer: coarse) { .bb-ws-selection-toggle { min-height:44px; min-width:44px; } }
+
+@media (pointer: coarse) {
+  .bb-workspace-sidebar { --ws-selection-gutter: 44px; }
+  .bb-ws-selecting .bb-ws-checkbox-gutter { width: 44px; padding-top: 18px; }
+  .bb-ws-selecting .bb-ws-checkbox-gutter [role="checkbox"] { position: relative; }
+  .bb-ws-selecting .bb-ws-checkbox-gutter [role="checkbox"]::after { content: ""; position: absolute; inset: -14px; }
+  .bb-ws-selecting .bb-ws-mainline { min-height: 44px; }
+}
