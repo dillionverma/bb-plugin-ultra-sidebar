@@ -1,12 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { nextRunLabel, scheduleDescription, scheduleTime, visibleScheduledTasks, type ScheduledTask } from "./scheduled-tasks";
+import { lastRunLabel, nextRunLabel, scheduleDescription, scheduleTime, visibleScheduledTasks, type ScheduledTask } from "./scheduled-tasks";
 import { createScheduledTasksActions, createScheduledTasksReader } from "./scheduled-tasks.server";
 
 const now = Date.UTC(2026, 8, 15, 12);
 const task = (overrides: Partial<ScheduledTask> = {}): ScheduledTask => ({
   id: "one", projectId: "p1", projectName: "BB", name: "Review", enabled: true,
   trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "America/Toronto" },
-  nextRunAt: now + 3_600_000, lastRunStatus: null, lastError: null, threadId: null, problem: null,
+  nextRunAt: now + 3_600_000, lastRunStatus: null, lastRunAt: null, lastError: null, threadId: null, problem: null,
   ...overrides,
 });
 afterEach(() => vi.useRealTimers());
@@ -40,6 +40,17 @@ it("never treats a due timestamp as proof of running and avoids zero-minute labe
   expect(nextRunLabel(task({ nextRunAt: null, lastRunStatus: "running" }), now)).toBe("Running");
 });
 
+it("describes the last run relative to now and stays quiet before the first one", () => {
+  expect(lastRunLabel(task(), now)).toBeNull();
+  expect(lastRunLabel(task({ lastRunStatus: "running" }), now)).toBe("Running");
+  expect(lastRunLabel(task({ lastRunStatus: "succeeded", lastRunAt: now - 30_000 }), now)).toBe("Ran just now");
+  expect(lastRunLabel(task({ lastRunStatus: "succeeded", lastRunAt: now - 5 * 60_000 }), now)).toBe("Ran 5m ago");
+  expect(lastRunLabel(task({ lastRunStatus: "failed", lastRunAt: now - 2 * 3_600_000 }), now)).toBe("Failed 2h ago");
+  expect(lastRunLabel(task({ lastRunStatus: "skipped", lastRunAt: now - 26 * 3_600_000 }), now)).toBe("Skipped yesterday");
+  expect(lastRunLabel(task({ lastRunStatus: "succeeded", lastRunAt: now - 3 * 86_400_000 }), now)).toBe("Ran 3d ago");
+  expect(lastRunLabel(task({ lastRunStatus: "failed", lastRunAt: null }), now)).toBe("Last run failed");
+});
+
 it("formats a schedule in its own timezone and tolerates invalid old timezone values", () => {
   expect(scheduleTime(now, "America/Toronto")).toContain("8:00");
   expect(scheduleTime(now, "UTC")).toContain("12:00");
@@ -65,12 +76,12 @@ function mockPlugins(data: unknown) {
 
 it("uses the public automations RPC and strips prompts from the sidebar response", async () => {
   const { api, callRpc } = mockPlugins({ automations: [{ project: { id: "p1", name: "BB" }, automation: {
-    ...task(), execution: { targetThreadId: "thread-1", prompt: "private instructions", script: "private script" },
+    ...task(), lastRunThreadId: "run-thread", execution: { targetThreadId: "thread-1", prompt: "private instructions", script: "private script" },
   } }] });
   const read = createScheduledTasksReader(api).list;
   const result = await read();
   expect(callRpc).toHaveBeenCalledWith(expect.objectContaining({ pluginId: "automations", method: "automations_overview", input: null }));
-  expect(result).toEqual({ availability: "ready", entries: [task({ threadId: "thread-1" })] });
+  expect(result).toEqual({ availability: "ready", entries: [task({ threadId: "run-thread" })] });
   expect(JSON.stringify(result)).not.toContain("private");
 });
 
@@ -112,7 +123,10 @@ it("runs, pauses and resumes through the automations plugin and drops the cached
   await actions.setEnabled({ projectId: "p1", automationId: "a1", enabled: true });
   expect(callRpc).toHaveBeenLastCalledWith(expect.objectContaining({ method: "automations_resume" }));
   expect(invalidate).toHaveBeenCalledTimes(3);
+  await actions.remove({ projectId: "p1", automationId: "a1" });
+  expect(callRpc).toHaveBeenLastCalledWith(expect.objectContaining({ method: "automations_delete", input: { projectId: "p1", automationId: "a1" } }));
+  expect(invalidate).toHaveBeenCalledTimes(4);
   callRpc.mockRejectedValueOnce(new Error("nope"));
   await expect(actions.run({ projectId: "p1", automationId: "a1" })).rejects.toThrow("nope");
-  expect(invalidate).toHaveBeenCalledTimes(4);
+  expect(invalidate).toHaveBeenCalledTimes(5);
 });

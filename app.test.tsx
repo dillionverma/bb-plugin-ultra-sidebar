@@ -1332,7 +1332,7 @@ describe("sidebar workspace and project filters", () => {
 
   it("scopes project choices and schedules when switching workspace", async () => {
     window.localStorage.setItem("bb-workspace-sidebar:scheduled-expanded:v1", "true");
-    const entries = projects.map(project => ({ id: project.id, projectId: project.id, projectName: project.name, name: `${project.name} schedule`, enabled: true, trigger: null, nextRunAt: null, lastRunStatus: null, lastError: null, threadId: null, problem: null }));
+    const entries = projects.map(project => ({ id: project.id, projectId: project.id, projectName: project.name, name: `${project.name} schedule`, enabled: true, trigger: null, nextRunAt: null, lastRunStatus: null, lastRunAt: null, lastError: null, threadId: null, problem: null }));
     const slot = await mount({ mode: "status", threads: [thread({ id: "alpha-thread", projectId: "p1" }), thread({ id: "beta-thread", projectId: "p2" })], rpc: { "scheduledTasks.list": () => ({ availability: "ready", entries }) } });
     fireEvent.click(slot.getByRole("button", { name: "Filter by project: All projects" }));
     fireEvent.click(await slot.findByRole("option", { name: "Beta" }));
@@ -1358,7 +1358,7 @@ describe("sidebar workspace and project filters", () => {
     expect(slot.getByText("live")).toBeTruthy();
     const dock = slot.getByLabelText("Snoozed threads");
     expect(within(dock).getByText("Parked work")).toBeTruthy();
-    expect(within(dock).getByText(/^Until /)).toBeTruthy();
+    expect(within(dock).getByText(/Today|Tomorrow/)).toBeTruthy();
     // Not in the list itself: the dock is the only place it appears.
     expect(slot.getAllByText("Parked work")).toHaveLength(1);
     expect(slot.queryByLabelText("Wake all snoozed threads")).toBeNull();
@@ -1390,11 +1390,70 @@ describe("sidebar workspace and project filters", () => {
     })));
   });
 
-  it("opens schedule details on click, with run and pause actions", async () => {
+  it("opens the thread that ran a schedule on click, and details from the chevron or right-click", async () => {
+    window.localStorage.setItem("bb-workspace-sidebar:scheduled-expanded:v1", "true");
+    const entry = { id: "auto-1", projectId: "p1", projectName: "Alpha", name: "Nightly triage", enabled: true,
+      trigger: { triggerType: "schedule" as const, cron: "0 9 * * *", timezone: "UTC" }, nextRunAt: Date.now() + 30 * 60_000,
+      lastRunStatus: "succeeded", lastRunAt: Date.now() - 2 * 3_600_000, lastError: null, threadId: "run-1", problem: null };
+    const onNavigate = vi.fn();
+    const slot = await mount({
+      mode: "status",
+      threads: [thread({ id: "run-1", projectId: "p1", title: "Nightly triage run" })],
+      onNavigate,
+      rpc: { "scheduledTasks.list": () => ({ availability: "ready", entries: [entry] }) },
+    });
+    const row = await slot.findByRole("link", { name: "Open Nightly triage" });
+    // A healthy schedule leads with what comes next; the last run lives in the details.
+    expect(within(row).getByText("In 30m")).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Run Nightly triage now" })).toBeTruthy();
+    fireEvent.click(row);
+    expect(slot.inspection.sidebarActionCalls).toContainEqual(expect.objectContaining({ method: "open", threadId: "run-1", options: { split: false } }));
+    expect(onNavigate).toHaveBeenCalled();
+    expect(slot.queryByText("Run now")).toBeNull();
+
+    fireEvent.click(slot.getByRole("button", { name: "Schedule details: Nightly triage" }));
+    expect(await slot.findByText("Run now")).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Open last run" })).toBeTruthy();
+    expect(slot.getByText(/^succeeded · /)).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(slot.queryByText("Run now")).toBeNull());
+
+    fireEvent.contextMenu(row);
+    fireEvent.click(await slot.findByRole("menuitem", { name: "Details" }));
+    expect(await slot.findByText("Run now")).toBeTruthy();
+  });
+
+  it("deletes a schedule only after a second confirming press", async () => {
+    window.localStorage.setItem("bb-workspace-sidebar:scheduled-expanded:v1", "true");
+    let entries = [{ id: "auto-1", projectId: "p1", projectName: "Alpha", name: "Old job", enabled: true,
+      trigger: { triggerType: "schedule" as const, cron: "0 9 * * *", timezone: "UTC" }, nextRunAt: Date.now() + 3_600_000,
+      lastRunStatus: null, lastRunAt: null, lastError: null, threadId: null, problem: null }];
+    const slot = await mount({
+      mode: "status",
+      threads: [thread({ id: "t1", projectId: "p1" })],
+      rpc: {
+        "scheduledTasks.list": () => ({ availability: "ready", entries }),
+        "scheduledTasks.delete": () => { entries = []; return { ok: true }; },
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Schedule details: Old job" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Delete…" }));
+    expect(slot.inspection.rpcCalls.some(call => call.method === "scheduledTasks.delete")).toBe(false);
+    fireEvent.click(slot.getByRole("button", { name: "Keep" }));
+    expect(slot.queryByRole("button", { name: "Delete schedule" })).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Delete…" }));
+    fireEvent.click(slot.getByRole("button", { name: "Delete schedule" }));
+    await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({
+      method: "scheduledTasks.delete", input: { projectId: "p1", automationId: "auto-1" },
+    })));
+    await waitFor(() => expect(slot.queryByText("Old job")).toBeNull());
+  });
+
+  it("shows schedule details on click before the first run, with run and pause actions", async () => {
     window.localStorage.setItem("bb-workspace-sidebar:scheduled-expanded:v1", "true");
     const entry = { id: "auto-1", projectId: "p1", projectName: "Alpha", name: "Nightly triage", enabled: true,
       trigger: { triggerType: "schedule" as const, cron: "0 9 * * *", timezone: "UTC" }, nextRunAt: Date.now() + 3_600_000,
-      lastRunStatus: null, lastError: null, threadId: null, problem: null };
+      lastRunStatus: null, lastRunAt: null, lastError: null, threadId: null, problem: null };
     const slot = await mount({
       mode: "status",
       threads: [thread({ id: "t1", projectId: "p1" })],
@@ -1404,7 +1463,7 @@ describe("sidebar workspace and project filters", () => {
         "scheduledTasks.setEnabled": () => ({ ok: true }),
       },
     });
-    const row = await slot.findByRole("button", { name: "Schedule details: Nightly triage" });
+    const row = await slot.findByRole("link", { name: "Nightly triage: show schedule details" });
     fireEvent.click(row);
     fireEvent.click(await slot.findByRole("button", { name: "Run now" }));
     await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({

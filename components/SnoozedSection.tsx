@@ -2,9 +2,14 @@ import { useId } from "react";
 import type { SnoozedEntry } from "../lib/resolve";
 import { scheduleLabel } from "../lib/thread-queue";
 import { usePersistedFlag } from "../hooks/useViewState";
-import { cn } from "../lib/utils";
 import { Icon } from "./ui/icon";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuTrigger,
+} from "./ui/context-menu";
 import { useSidebar } from "./sidebar-context";
+import { DockAction, DockHeader, DockRow } from "./DockRow";
+import { ProjectIcon } from "./ProjectIcon";
+import { StatusIcon } from "./StatusIcon";
 
 export const SNOOZED_EXPANDED_KEY = "bb-workspace-sidebar:snoozed-expanded:v1";
 
@@ -19,19 +24,13 @@ export function SnoozedSection({ entries, now }: { entries: readonly SnoozedEntr
   const sectionId = useId();
   if (entries.length === 0) return null;
   return <section className="ws-snoozed" aria-label="Snoozed threads" data-sidebar-snoozed="">
-    <div className="flex items-center gap-1">
-      <button type="button" className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-xs text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-expanded={expanded} aria-controls={sectionId} onClick={() => setExpanded(!expanded)}>
-        <Icon name={expanded ? "ChevronDown" : "ChevronRight"} className="size-3 shrink-0" aria-hidden />
-        <Icon name="Clock" className="size-3.5 shrink-0" aria-hidden />
-        <span className="font-medium">Snoozed</span>
-        <span className="text-[11px] tabular-nums">{entries.length}</span>
-      </button>
-      {expanded && entries.length > 1 && <button type="button" aria-label="Wake all snoozed threads"
-        className="shrink-0 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => entries.forEach(entry => sidebar.setSnoozed(entry.thread.id, null))}>Wake all</button>}
-    </div>
-    {expanded && <ul id={sectionId} className="ws-snoozed-children ml-[14px] max-h-48 overflow-y-auto border-l border-border/60 pb-1 pl-2">
+    <DockHeader label="Snoozed" icon="Clock" count={entries.length} expanded={expanded} onToggle={() => setExpanded(!expanded)} controls={sectionId}
+      trailing={expanded && entries.length > 1
+        ? <button type="button" aria-label="Wake all snoozed threads"
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/header:opacity-100 pointer-coarse:opacity-100"
+            onClick={() => entries.forEach(entry => sidebar.setSnoozed(entry.thread.id, null))}>Wake all</button>
+        : undefined} />
+    {expanded && <ul id={sectionId} className="bb-ws-section-tree max-h-48 overflow-y-auto pb-1">
       {entries.map(entry => <SnoozedRow key={entry.thread.id} entry={entry} now={now} />)}
     </ul>}
   </section>;
@@ -42,21 +41,32 @@ function SnoozedRow({ entry, now }: { entry: SnoozedEntry; now: number }) {
   const { thread, until } = entry;
   const title = thread.title ?? thread.titleFallback ?? thread.id;
   const project = sidebar.projectNameOf(thread.projectId);
-  const active = sidebar.activeThreadId === thread.id;
-  return <li className="group/snoozed flex items-center gap-1">
-    <button type="button" onClick={() => sidebar.openThread(thread.id, false)}
-      className={cn("ws-snoozed-row flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active && "bg-accent")}>
-      <Icon name="Clock" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{title}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="shrink-0 tabular-nums">Until {scheduleLabel(until, now).replace("Scheduled · ", "")}</span>
-          {project !== "" && <span className="truncate">· {project}</span>}
-        </span>
-      </span>
-    </button>
-    <button type="button" aria-label={`Wake ${title}`} title="Bring this thread back now"
-      className="shrink-0 rounded px-1.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => sidebar.setSnoozed(thread.id, null)}>Wake</button>
+  const wake = scheduleLabel(until, now).replace("Scheduled · ", "");
+  return <li>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="relative flex items-start">
+          <DockRow
+            glyph={<StatusIcon tone="idle" label={`Snoozed until ${wake}`} className="size-3.5 shrink-0" />}
+            glyphTip={`Snoozed · back ${wake}`}
+            title={title}
+            active={sidebar.activeThreadId === thread.id}
+            ariaLabel={`Open ${title}`}
+            onOpen={() => sidebar.openThread(thread.id, false)}
+            trailing={<>
+              <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground" title={`Wakes ${wake}`}>{wake}</span>
+              {project !== "" && <span className="flex shrink-0 items-center text-muted-foreground" title={project}><ProjectIcon projectId={thread.projectId} className="size-3" /></span>}
+            </>}
+            actions={<DockAction label={`Wake ${title}`} icon="RotateCcw" text="Wake" onActivate={() => sidebar.setSnoozed(thread.id, null)} />}
+          />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuGroup aria-label="Snoozed thread">
+          <ContextMenuItem onSelect={() => sidebar.openThread(thread.id, false)}><Icon name="MessageSquare" />Open</ContextMenuItem>
+          <ContextMenuItem onSelect={() => sidebar.setSnoozed(thread.id, null)}><Icon name="RotateCcw" />Wake now</ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   </li>;
 }

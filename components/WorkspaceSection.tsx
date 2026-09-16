@@ -17,6 +17,7 @@ import { guardHandle } from "@/hooks/useSidebarDnd";
 import { sectionKey, sortableId, type DndData, type DropZone } from "@/lib/dnd";
 import { isSyntheticSectionId } from "@/lib/regroup";
 import { useSidebar } from "./sidebar-context";
+import { useWindowedRows } from "./scroll-container";
 import { ThreadRow } from "./ThreadRow";
 import { ProjectIcon } from "./ProjectIcon";
 import { ProjectContextMenu, WorkspaceContextMenu } from "./RowContextMenu";
@@ -121,10 +122,22 @@ function SubtreeChildren({
   );
 }
 
+/** Where a windowed row sits, and how the window learns its real height. */
+interface VirtualSlot {
+  index: number;
+  /** Distance from the top of the list, in px. */
+  offset: number;
+  measure: (element: HTMLElement | null) => void;
+}
+
 /**
  * A root thread and its subagent descendants, as one sortable node: a
- * subtree always moves with its root, so the root's `li` is what dnd-kit
+ * subtree always moves with its root, so the root's node is what dnd-kit
  * slides around, children and all.
+ *
+ * In a windowed list the `li` is placed by the window and the sortable node
+ * is the div inside it, so the two transforms — the window's placement and
+ * dnd-kit's slide — never fight over one element.
  */
 function RootSubtree({
   node,
@@ -133,7 +146,8 @@ function RootSubtree({
   executions,
   pullRequests,
   sectionLabel = null,
-}: SubtreeProps) {
+  virtual,
+}: SubtreeProps & { virtual?: VirtualSlot }) {
   const sidebar = useSidebar();
   const expanded = sidebar.isSubtreeExpanded(node.thread.id);
   const { setNodeRef, style, handle, isDragging } = useSortableZone(
@@ -142,12 +156,8 @@ function RootSubtree({
     workspaceId,
     { draggable: true },
   );
-  return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className={cn("relative", isDragging && "z-10 opacity-60")}
-    >
+  const content = (
+    <>
       <ThreadRow
         node={node}
         workspaceId={workspaceId}
@@ -169,7 +179,113 @@ function RootSubtree({
           sectionLabel={sectionLabel}
         />
       ) : null}
+    </>
+  );
+  if (virtual === undefined) {
+    return (
+      <li
+        ref={setNodeRef}
+        style={style}
+        className={cn("relative", isDragging && "z-10 opacity-60")}
+      >
+        {content}
+      </li>
+    );
+  }
+  return (
+    <li
+      ref={virtual.measure}
+      data-index={virtual.index}
+      className="absolute left-0 top-0 w-full"
+      style={{ transform: `translateY(${virtual.offset}px)` }}
+    >
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={cn("relative", isDragging && "z-10 opacity-60")}
+      >
+        {content}
+      </div>
     </li>
+  );
+}
+
+/** Estimated row height before a row has been measured, by row layout. */
+const ROW_ESTIMATE_PX = { compact: 32, detailed: 44 } as const;
+
+/**
+ * A group's root rows, windowed: only the rows near the viewport are in the
+ * DOM, the list reserves the height of the rest. Without a scroll area to
+ * window against (jsdom, an unexpected host) every row renders in flow.
+ */
+function GroupRows({
+  group,
+  workspaceId,
+  showProject,
+  executions,
+  pullRequests,
+  sectionLabel,
+  className,
+}: {
+  group: ProjectGroup;
+  workspaceId: string | null;
+  showProject: boolean;
+  executions: ExecutionMap;
+  pullRequests: PullRequestMap;
+  sectionLabel: string | null;
+  className?: string;
+}) {
+  const sidebar = useSidebar();
+  const estimate = sidebar.compactRows
+    ? ROW_ESTIMATE_PX.compact
+    : ROW_ESTIMATE_PX.detailed;
+  const windowed = useWindowedRows(group.roots, {
+    keyOf: (node) => node.thread.id,
+    estimateSize: () => estimate,
+  });
+  if (!windowed.active) {
+    return (
+      <ul ref={windowed.listRef} className={className}>
+        {group.roots.map((node) => (
+          <RootSubtree
+            key={node.thread.id}
+            node={node}
+            workspaceId={workspaceId}
+            showProject={showProject}
+            executions={executions}
+            pullRequests={pullRequests}
+            sectionLabel={sectionLabel}
+          />
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <ul
+      ref={windowed.listRef}
+      className={cn("relative", className)}
+      style={{ height: windowed.totalSize }}
+    >
+      {windowed.items.map((item) => {
+        const node = windowed.rowAt(item);
+        return (
+          <RootSubtree
+            key={node.thread.id}
+            node={node}
+            workspaceId={workspaceId}
+            showProject={showProject}
+            executions={executions}
+            pullRequests={pullRequests}
+            sectionLabel={sectionLabel}
+            virtual={{
+              index: item.index,
+              offset: windowed.offsetOf(item),
+              measure: windowed.measure,
+            }}
+          />
+        );
+      })}
+    </ul>
   );
 }
 
@@ -247,20 +363,16 @@ const ProjectGroupView = memo(function ProjectGroupView({
 
   const rows = (
     <SortableContext items={threadIds} strategy={verticalListSortingStrategy}>
-      <ul className={flat ? undefined : "bb-ws-project-threads"}>
-        {group.roots.map((node) => (
-          <RootSubtree
-            key={node.thread.id}
-            node={node}
-            workspaceId={workspaceId}
-            // No heading above a flat group: the row names its project.
-            showProject={flat}
-            executions={executions}
-            pullRequests={pullRequests}
-            sectionLabel={sectionLabel}
-          />
-        ))}
-      </ul>
+      <GroupRows
+        group={group}
+        workspaceId={workspaceId}
+        // No heading above a flat group: the row names its project.
+        showProject={flat}
+        executions={executions}
+        pullRequests={pullRequests}
+        sectionLabel={sectionLabel}
+        className={flat ? undefined : "bb-ws-project-threads"}
+      />
     </SortableContext>
   );
 

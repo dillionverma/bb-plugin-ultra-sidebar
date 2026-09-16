@@ -9,6 +9,7 @@ export interface ScheduledTask {
   trigger: { triggerType: "schedule"; cron: string; timezone: string } | { triggerType: "once"; runAt: number } | null;
   nextRunAt: number | null;
   lastRunStatus: string | null;
+  lastRunAt: number | null;
   lastError: string | null;
   threadId: string | null;
   problem: string | null;
@@ -38,6 +39,30 @@ export function nextRunLabel(task: ScheduledTask, now: number): string {
   const minutes = Math.ceil((task.nextRunAt - now) / 60_000);
   if (minutes < 60) return `In ${minutes}m`;
   return scheduleLabel(task.nextRunAt, now);
+}
+
+/**
+ * What the last run did, in the row's second line: "Ran 2h ago", "Failed
+ * 2h ago", "Running". Null when it has never run, so the schedule's shape
+ * ("Daily") can take the slot instead.
+ */
+export function lastRunLabel(task: ScheduledTask, now: number): string | null {
+  if (task.lastRunStatus === "running") return "Running";
+  if (task.lastRunAt === null) return task.lastRunStatus === "failed" ? "Last run failed" : null;
+  const ago = relativeAgo(task.lastRunAt, now);
+  if (task.lastRunStatus === "failed") return `Failed ${ago}`;
+  if (task.lastRunStatus === "skipped") return `Skipped ${ago}`;
+  return `Ran ${ago}`;
+}
+
+function relativeAgo(timestamp: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "yesterday" : `${days}d ago`;
 }
 
 export function scheduleTime(timestamp: number, timezone?: string): string {

@@ -53,3 +53,6 @@
 /* The dock under the list: scheduled automations and snoozed threads. Empty
    sections render nothing, so an empty dock takes no space at all. */
 .bb-ws-dock:not(:empty) { border-top: 1px solid var(--ws-line); padding: 4px 4px 2px; background: var(--sidebar); }
+/* The trailing word yields to the hover actions, exactly as a thread row's status does. */
+.bb-ws-dock-row:hover .bb-ws-dock-trailing, .bb-ws-dock-row:focus-within .bb-ws-dock-trailing { visibility: hidden; }
+@media (pointer: coarse) { .bb-ws-dock-trailing { display: none; } }

@@ -178,6 +178,11 @@ export const rpcContract = defineRpcContract({
     input: scheduledTaskRefSchema.extend({ enabled: z.boolean() }),
     output: z.object({ ok: z.literal(true) }),
   },
+  /** Delete an automation for good. Confirmed in the sidebar before it is sent. */
+  "scheduledTasks.delete": {
+    input: scheduledTaskRefSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
   /**
    * The current activity of each thread asked about, for the rows that are
    * live. Threads with nothing to say are simply absent. Asking is also what
@@ -564,6 +569,7 @@ export default async function plugin(bb: BbPluginApi) {
     "scheduledTasks.list": () => scheduledTasks.list(),
     "scheduledTasks.run": (ref) => scheduledTaskActions.run(ref),
     "scheduledTasks.setEnabled": (input) => scheduledTaskActions.setEnabled(input),
+    "scheduledTasks.delete": (ref) => scheduledTaskActions.remove(ref),
     "threads.agentActivity": async ({ threadIds }) => {
       const entries: {
         threadId: string;

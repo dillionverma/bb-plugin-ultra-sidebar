@@ -5,7 +5,7 @@
 // waiting on the person, so a row at rest keeps the ring and the sidebar does
 // not turn into a wall of animation. Keyed off bb's indicator, never the pull
 // request: a PR with conflicts is a fact about the work, not about the agent.
-import { ThinkingOrb } from "thinking-orbs";
+import { ThinkingOrb } from "@/components/ui/thinking-orb";
 import type { OrbState } from "thinking-orbs";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";

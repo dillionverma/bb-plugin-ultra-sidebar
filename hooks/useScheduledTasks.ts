@@ -45,5 +45,7 @@ export function useScheduledTasks() {
   const setEnabled = useCallback((task: ScheduledTask, enabled: boolean) =>
     act(enabled ? `Resumed ${task.name}` : `Paused ${task.name}`,
       () => rpc.call("scheduledTasks.setEnabled", { projectId: task.projectId, automationId: task.id, enabled })), [act, rpc]);
-  return { value, refresh, run, setEnabled };
+  const remove = useCallback((task: ScheduledTask) =>
+    act(`Deleted ${task.name}`, () => rpc.call("scheduledTasks.delete", { projectId: task.projectId, automationId: task.id })), [act, rpc]);
+  return { value, refresh, run, setEnabled, remove };
 }

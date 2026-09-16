@@ -66,6 +66,7 @@ import {
 import { DragStateProvider } from "./drag-state-context";
 import { SidebarDock } from "./SidebarDock";
 import { WorkspaceSection } from "./WorkspaceSection";
+import { ScrollContainerProvider } from "./scroll-container";
 import { ErrorBoundary } from "./ErrorBoundary";
 import {
   bucketFromSectionId,
@@ -97,6 +98,9 @@ function SidebarBody(props: PluginThreadListProps) {
   const [rowDetails, setRowDetail] = usePersistedDetails(ROW_DETAILS_KEY);
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  // The scroll area and its content, for the windowed row lists inside.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // The clock the resolver compares snoozes against. It only moves when a
   // snooze is due to end, so a thread comes back at its wake time without the
@@ -690,8 +694,10 @@ function SidebarBody(props: PluginThreadListProps) {
               {/* bb keeps the New-thread button, the search action, the plugin nav
             rows and the footer; a replaced list owns the scroll area only, so
             our own controls belong at the top of it. */}
+              <ScrollContainerProvider scrollRef={scrollRef} contentRef={contentRef}>
               <div className="bb-ws-body flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="bb-ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-1 pb-2">
+              <div ref={scrollRef} className="bb-ws-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-1 pb-2">
+              <div ref={contentRef} className="bb-ws-content flex flex-col">
                 <div className="bb-ws-toolbar sticky top-0 z-10 flex items-center gap-0.5 bg-sidebar px-1 py-1.5">
                   {isCreating ? (
                     <input
@@ -806,8 +812,10 @@ function SidebarBody(props: PluginThreadListProps) {
                   </div>
                 )}
               </div>
+              </div>
               <SidebarDock snoozed={snoozedEntries} projectIds={scheduledProjectIds} />
               </div>
+              </ScrollContainerProvider>
             </SidebarInteractions>
           </TooltipProvider>
         </DragStateProvider>
