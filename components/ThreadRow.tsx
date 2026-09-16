@@ -96,11 +96,11 @@ function ParkButton({
           onActivate();
         }}
         className={cn(
-          "bb-ws-row-action flex h-5 shrink-0 items-center gap-1 rounded text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "bb-ws-row-action flex h-5 shrink-0 items-center gap-1 rounded text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:pointer-coarse:h-9 max-md:pointer-coarse:min-w-9 max-md:pointer-coarse:justify-center",
           text === undefined ? "px-0.5" : "px-1",
         )}
       >
-        <Icon name={icon} aria-hidden className="size-3.5" />
+        <Icon name={icon} aria-hidden className="size-3.5 max-md:pointer-coarse:size-5" />
         {text === undefined ? null : (
           <span className="text-[11px] font-medium">{text}</span>
         )}
@@ -324,11 +324,24 @@ export const ThreadRow = memo(function ThreadRow({
       descendantCount={descendantCount}
     />
   );
+  // Touch has no hover, so coarse pointers keep the actions in view. A phone
+  // sidebar is narrow enough that the cluster would cover every title, so
+  // there only the active thread keeps it; every row still has the
+  // long-press menu.
   const rowActions = isRenaming || selection.active ? null : (
     <span
+      data-thread-row-actions=""
       className={compact
-        ? cn("absolute right-0 flex items-center gap-0.5 rounded bg-accent transition-opacity group-hover/row:pointer-events-auto group-hover/row:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100", handoffOpen ? "opacity-100" : "pointer-events-none opacity-0")
-        : cn("shrink-0 items-center gap-0.5 group-hover/row:flex group-focus-within/row:flex pointer-coarse:flex", handoffOpen ? "flex" : "hidden")}
+        ? cn(
+            "absolute right-0 flex items-center gap-0.5 rounded bg-accent transition-opacity group-hover/row:pointer-events-auto group-hover/row:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 md:pointer-coarse:pointer-events-auto md:pointer-coarse:opacity-100",
+            isActive && "max-md:pointer-coarse:pointer-events-auto max-md:pointer-coarse:opacity-100",
+            handoffOpen ? "opacity-100" : "pointer-events-none opacity-0",
+          )
+        : cn(
+            "shrink-0 items-center gap-0.5 group-hover/row:flex group-focus-within/row:flex md:pointer-coarse:flex",
+            isActive && "max-md:pointer-coarse:flex",
+            handoffOpen ? "flex" : "hidden",
+          )}
     >
       <ThreadHandoff threadId={thread.id} workspaceId={workspaceId} sourceProviderId={thread.providerId} currentModel={execution?.model ?? null} onOpenChange={setHandoffOpen} />
       {failed ? (
