@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ThreadNode } from "@/lib/resolve";
-import { MAX_RENDER_DEPTH } from "@/lib/resolve";
+import { LEVEL_BADGE_FROM_DEPTH, ROW_BASE_PAD_PX, indentPx } from "@/lib/indent";
 import type { ThreadExecution } from "@/hooks/useThreadExecution";
 import { useSidebar } from "./sidebar-context";
 import { StatusIcon } from "./StatusIcon";
@@ -45,8 +45,6 @@ import {
 import { ThreadStatus, threadStatus } from "./ThreadStatus";
 import type { ThreadPullRequest } from "@/hooks/useThreadPullRequests";
 import { STATUS_LABEL, statusBucket } from "@/lib/status";
-
-const INDENT_PX = 14;
 
 /**
  * Long enough that dragging across rows, or just moving the pointer to
@@ -76,7 +74,7 @@ function ParkButton({
   onActivate,
 }: {
   label: string;
-  icon: "Clock" | "Check" | "RotateCcw";
+  icon: "Clock" | "Check" | "RotateCcw" | "Pin" | "PinOff";
   text?: string;
   onActivate: () => void;
 }) {
@@ -178,15 +176,14 @@ function RowHover({
 
 export const ThreadRow = memo(function ThreadRow({
   node,
-  workspaceId,
   showProject,
   execution,
   pullRequest,
   sectionLabel = null,
   dragHandle,
+  leaving = false,
 }: {
   node: ThreadNode;
-  workspaceId: string | null;
   /** False under a project heading, where the badge would only repeat it. */
   showProject: boolean;
   execution: ThreadExecution | undefined;
@@ -195,6 +192,8 @@ export const ThreadRow = memo(function ThreadRow({
   sectionLabel?: string | null;
   /** dnd-kit's press listeners, from the sortable wrapper; roots only. */
   dragHandle?: DraggableSyntheticListeners;
+  /** The thread already left this list; the row is only fading out. */
+  leaving?: boolean;
 }) {
   const sidebar = useSidebar();
   const selection = useSidebarSelection();
@@ -270,7 +269,7 @@ export const ThreadRow = memo(function ThreadRow({
   }, [isRenaming]);
 
   const title = thread.title ?? thread.titleFallback ?? "Untitled";
-  const indent = Math.min(node.depth, MAX_RENDER_DEPTH) * INDENT_PX;
+  const indent = indentPx(node.depth);
   const provider = sidebar.provider(thread.providerId);
   const status = threadStatus(thread, pullRequest, manualStatus);
   const needsInput = thread.hasPendingInteraction || thread.indicator === "waiting-for-input";
@@ -279,11 +278,12 @@ export const ThreadRow = memo(function ThreadRow({
   // Each badge is behind its own switch in View options; a switched-off fact
   // is simply absent, and a row with nothing left has no second line.
   const details = sidebar.rowDetails;
-  // From the thread, not the section: a status bucket's group is named after
-  // the bucket, not a project.
+  // From the thread, not the section: a status bucket and the Pinned list are
+  // named after themselves, so their rows have to name their own project.
+  // Under a project heading they do not — it would only repeat it.
   const projectName = sidebar.projectNameOf(thread.projectId);
   const project =
-    details.project && (compact || showProject) && projectName !== "" ? projectName : null;
+    details.project && showProject && projectName !== "" ? projectName : null;
   const branch = details.branch
     ? (thread.environment?.branchName ?? null)
     : null;
@@ -343,13 +343,20 @@ export const ThreadRow = memo(function ThreadRow({
             handoffOpen ? "flex" : "hidden",
           )}
     >
-      <ThreadHandoff threadId={thread.id} workspaceId={workspaceId} sourceProviderId={thread.providerId} currentModel={execution?.model ?? null} onOpenChange={setHandoffOpen} />
+      <ThreadHandoff threadId={thread.id} sourceProviderId={thread.providerId} currentModel={execution?.model ?? null} onOpenChange={setHandoffOpen} />
       {failed ? (
         <ParkButton
           label="Retry the failed turn"
           icon="RotateCcw"
           text={compact ? undefined : "Retry"}
           onActivate={() => sidebar.retryThread(thread.id)}
+        />
+      ) : null}
+      {isRoot ? (
+        <ParkButton
+          label={thread.isPinned ? "Unpin from the top" : "Pin to the top"}
+          icon={thread.isPinned ? "PinOff" : "Pin"}
+          onActivate={() => sidebar.setPinned(thread.id, !thread.isPinned)}
         />
       ) : null}
       {bucket === "in-progress" || bucket === "in-review" ? (
@@ -375,6 +382,11 @@ export const ThreadRow = memo(function ThreadRow({
       className="relative group/selection-row flex items-start"
       style={{
         contentVisibility: "auto",
+        // Deliberately a fixed length, not `auto <length>`. `auto` remembers
+        // the size the row last rendered at, and a row remembered at its
+        // one-line height keeps claiming it after it grows a second line —
+        // which the windowed list reads through this row's `li` and turns
+        // into rows drawn on top of each other.
         containIntrinsicSize: compact ? "32px" : "44px",
       }}
     >
@@ -390,7 +402,6 @@ export const ThreadRow = memo(function ThreadRow({
 
       <RowContextMenu
         item={{ kind: "thread", refId: thread.id }}
-        currentWorkspaceId={workspaceId}
         thread={thread}
         manualStatus={manualStatus}
         pullRequestUrl={pullRequest?.url ?? null}
@@ -400,9 +411,29 @@ export const ThreadRow = memo(function ThreadRow({
             shortcuts find rows by query selector, not by React state. */}
         <a
           href="#"
-          data-sidebar-thread-shortcut-target=""
-          data-sidebar-thread-id={thread.id}
+          // A leaving row is a picture of where the thread used to be, and
+          // the thread itself is already somewhere else. Both the host's
+          // shortcuts and this sidebar's own reveal find rows by these two
+          // attributes, so the ghost must not answer to either.
+          {...(leaving
+            ? { "aria-hidden": true, tabIndex: -1 }
+            : {
+                "data-sidebar-thread-shortcut-target": "",
+                "data-sidebar-thread-id": thread.id,
+              })}
           data-sidebar-bucket={bucket}
+          // Read by the P shortcut, which has no access to the thread record:
+          // it toggles against what the focused row currently is.
+          data-sidebar-thread-pinned={String(thread.isPinned)}
+          // Tree shape for the flat-DOM keyboard handlers, which have no
+          // access to ThreadNode. Never clamped the way the visual indent
+          // is: this is the real depth. Parentage is read as "nearest
+          // preceding row with a smaller depth", not from parentThreadId,
+          // because a promoted orphan's parent has no row at all.
+          data-sidebar-thread-depth={node.depth}
+          data-sidebar-thread-expanded={
+            hasChildren ? String(isExpanded) : undefined
+          }
           data-thread-layout={compact ? "compact" : "detailed"}
           data-attention={needsAttention}
           data-selected={selection.selected.has(thread.id)}
@@ -431,7 +462,7 @@ export const ThreadRow = memo(function ThreadRow({
             isActive && "bg-accent text-foreground",
             split.layout !== null && !isActive && "bg-accent/30",
           )}
-          style={{ paddingLeft: `${6 + indent}px` }}
+          style={{ paddingLeft: `${ROW_BASE_PAD_PX + indent}px` }}
         >
           <RowHover
             enabled={draftTitle === null && !isDragActive && !detailsOpen && !handoffOpen && !modeDetailsOpen && !selection.active}
@@ -448,9 +479,7 @@ export const ThreadRow = memo(function ThreadRow({
               {hasChildren ? (
                 <button
                   type="button"
-                  aria-label={
-                    isExpanded ? "Collapse subagents" : "Expand subagents"
-                  }
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} subagents of ${title}`}
                   aria-expanded={isExpanded}
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
@@ -471,6 +500,19 @@ export const ThreadRow = memo(function ThreadRow({
               ) : (
                 <span aria-hidden className="w-4 shrink-0" />
               )}
+
+              {/* Past the point where the per-level step reaches its 4px
+                  floor, indent alone is a weak answer to "how deep am I".
+                  It sits after the chevron on purpose: the rails are aimed
+                  at the chevron's centre, so nothing may shift it. */}
+              {node.depth >= LEVEL_BADGE_FROM_DEPTH ? (
+                <span
+                  title={`Level ${node.depth + 1}`}
+                  className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50"
+                >
+                  {node.depth + 1}
+                </span>
+              ) : null}
 
               <span className="flex shrink-0 items-center">
                 {needsInput ? (

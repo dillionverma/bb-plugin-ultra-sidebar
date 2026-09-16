@@ -1,27 +1,21 @@
-// bb-plugin-workspace-sidebar — backend entry.
+// bb-plugin-ultra-sidebar — backend entry.
 //
-// Owns the workspace grouping: which projects and threads belong to which
-// user-defined workspace, and in what order. bb's own projects and threads are
-// never mutated for grouping, so uninstalling this plugin loses the grouping
-// and nothing else.
+// Owns the sidebar's own state: the hand-picked order of projects and threads,
+// and each thread's triage status and snooze. bb's own projects and threads are
+// never mutated for it, so uninstalling this plugin loses that state and
+// nothing else.
 //
 // Three surfaces share one store: the replaced sidebar (app.tsx, over RPC),
-// the `bb workspace` CLI, and the skill in skills/workspaces/SKILL.md. Every
+// the `bb sidebar` CLI, and the skill in skills/sidebar/SKILL.md. Every
 // write goes through Store.withWrite, which bumps a revision and publishes a
 // realtime signal, so a change from any surface reaches every open window.
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { createStore, MIGRATIONS, type Store } from "./lib/store.server";
-import { placeItem, toPlacement, type DropSide } from "./lib/order";
-import {
-  WORKSPACES_CHANGED,
-  type ItemKind,
-  type Placement,
-  type Workspace,
-} from "./lib/types";
+import { placeItem, toPlacement } from "./lib/order";
+import { SIDEBAR_CHANGED, type ItemKind, type Placement } from "./lib/types";
 import { isManualStatus } from "./lib/status";
 import {
   AGENT_ACTIVITY,
@@ -39,21 +33,10 @@ import { ProjectIconCache } from "./lib/project-artwork-cache";
 import { findProjectArtwork, type ProjectArtwork } from "./lib/project-artwork.server";
 
 const itemKindSchema = z.enum(["project", "thread"]);
-const sortModeSchema = z.enum(["recent", "manual"]);
 
-const workspaceSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  sortIndex: z.number().int(),
-  sortMode: sortModeSchema,
-  createdAt: z.number().int(),
-});
-
-const assignmentSchema = z.object({
+const orderSchema = z.object({
   kind: itemKindSchema,
   refId: z.string(),
-  // null means an explicit detach: pin to Unassigned rather than inherit.
-  workspaceId: z.string().nullable(),
   sortIndex: z.number().int(),
 });
 
@@ -70,15 +53,13 @@ const lifecycleSchema = z.object({
 
 const stateSchema = z.object({
   revision: z.number().int(),
-  workspaces: z.array(workspaceSchema),
-  assignments: z.array(assignmentSchema),
+  order: z.array(orderSchema),
   lifecycle: z.array(lifecycleSchema),
 });
 
 const placementSchema = z.object({
   kind: itemKindSchema,
   refId: z.string(),
-  workspaceId: z.string().nullable(),
 });
 
 const itemRefSchema = z.object({
@@ -193,7 +174,7 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadIds: z.array(z.string()).min(1).max(300) }),
     output: z.object({ entries: z.array(agentActivitySchema) }),
   },
-  "workspaces.state": { input: z.null(), output: stateSchema },
+  "sidebar.state": { input: z.null(), output: stateSchema },
   /** Checkout directories for a batch of environments; unknown ids are skipped. */
   "environments.locations": {
     input: z.object({
@@ -209,20 +190,14 @@ export const rpcContract = defineRpcContract({
     input: z.object({ environmentId: z.string() }),
     output: openFolderResultSchema,
   },
-  "workspaces.edit": {
+  "sidebar.edit": {
     input: z.object({
       before: stateSchema.extend({
-        workspaces: z.array(workspaceSchema).max(200),
-        assignments: z.array(assignmentSchema).max(5000),
+        order: z.array(orderSchema).max(5000),
         lifecycle: z.array(lifecycleSchema).max(10000),
       }),
       after: stateSchema.extend({
-        workspaces: z
-          .array(
-            workspaceSchema.extend({ name: z.string().trim().min(1).max(60) }),
-          )
-          .max(200),
-        assignments: z.array(assignmentSchema).max(5000),
+        order: z.array(orderSchema).max(5000),
         lifecycle: z.array(lifecycleSchema).max(10000),
       }),
     }),
@@ -251,47 +226,21 @@ export const rpcContract = defineRpcContract({
     }),
   },
   "threads.handoff": {
-    input: z.object({ threadId: z.string().min(1), workspaceId: z.string().nullable(), target: z.object({ providerId: z.string().min(1), model: z.string().min(1) }).optional() }),
+    input: z.object({ threadId: z.string().min(1), target: z.object({ providerId: z.string().min(1), model: z.string().min(1) }).optional() }),
     output: z.object({ threadId: z.string() }),
   },
   "threads.retry": {
     input: z.object({ threadId: z.string() }),
     output: z.object({ delivery: z.enum(["sent", "queued"]) }),
   },
-  "workspaces.create": {
-    input: z.object({ name: z.string().trim().min(1).max(60) }),
-    output: z.object({ workspace: workspaceSchema, state: stateSchema }),
-  },
-  "workspaces.rename": {
-    input: z.object({ id: z.string(), name: z.string().trim().min(1).max(60) }),
-    output: stateSchema,
-  },
-  "workspaces.remove": {
-    input: z.object({
-      id: z.string(),
-      // "detach" drops the rows so members fall back to inheriting; a
-      // workspace id moves them there instead.
-      reassign: z.string().default("detach"),
-    }),
-    output: stateSchema,
-  },
-  "workspaces.reorder": {
-    input: z.object({ orderedIds: z.array(z.string()).max(200) }),
-    output: stateSchema,
-  },
-  "workspaces.setSortMode": {
-    input: z.object({ id: z.string(), sortMode: sortModeSchema }),
-    output: stateSchema,
-  },
-  // One drop is one call: the client sends the complete post-drop list, so a
-  // move and a reorder are the same operation and retrying is harmless.
-  "assignments.place": {
+  // One drop is one call: the client sends the complete post-drop list, so
+  // every reorder is the same operation and retrying is harmless.
+  "order.place": {
     input: z.object({ placements: z.array(placementSchema).max(5000) }),
     output: stateSchema,
   },
-  // Delete the row entirely -> the item goes back to inheriting. Distinct from
-  // placing it with workspaceId: null, which pins it to Unassigned.
-  "assignments.clear": {
+  // Delete the rows entirely -> those items sort by recency again.
+  "order.clear": {
     input: z.object({ items: z.array(itemRefSchema).min(1).max(500) }),
     output: stateSchema,
   },
@@ -367,12 +316,6 @@ export const rpcContract = defineRpcContract({
   },
 });
 
-function formatWorkspace(workspace: Workspace, memberCount: number): string {
-  return `${workspace.id}  ${workspace.name}  (${memberCount} item${
-    memberCount === 1 ? "" : "s"
-  }, ${workspace.sortMode})`;
-}
-
 export default async function plugin(bb: BbPluginApi) {
   const scheduledTasks = createScheduledTasksReader(bb.sdk.plugins);
   const scheduledTaskActions = createScheduledTasksActions(bb.sdk.plugins, scheduledTasks.invalidate);
@@ -380,13 +323,9 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, MIGRATIONS);
 
-  const store: Store = createStore(
-    db,
-    (revision) => {
-      bb.realtime.publish(WORKSPACES_CHANGED, { revision });
-    },
-    () => `ws_${randomUUID().slice(0, 8)}`,
-  );
+  const store: Store = createStore(db, (revision) => {
+    bb.realtime.publish(SIDEBAR_CHANGED, { revision });
+  });
 
   // ---- agent activity ----------------------------------------------------
   //
@@ -615,29 +554,19 @@ export default async function plugin(bb: BbPluginApi) {
         error: catalog.modelLoadError ? `Models unavailable: ${catalog.modelLoadError.code}` : null,
       };
     },
-    "threads.handoff": async ({ threadId, workspaceId, target }) => {
-      const result = await bb.sdk.plugins.callRpc({
+    "threads.handoff": async ({ threadId, target }) => {
+      return await bb.sdk.plugins.callRpc({
         pluginId: "handoff", method: "handoff", input: { threadId, ...(target ? { target } : {}) },
         outputSchema: z.object({ threadId: z.string() }),
       });
-      store.placeAssignments([{ kind: "thread", refId: result.threadId, workspaceId }]);
-      return result;
     },
     "threads.retry": async ({ threadId }) => ({
       delivery: (await bb.sdk.threads.retry({ threadId })).delivery,
     }),
-    "workspaces.state": () => store.readState(),
-    "workspaces.edit": ({ before, after }) => store.edit(before, after),
-    "workspaces.create": ({ name }) => store.createWorkspace(name),
-    "workspaces.rename": ({ id, name }) => store.renameWorkspace(id, name),
-    "workspaces.remove": ({ id, reassign }) =>
-      store.removeWorkspace(id, reassign),
-    "workspaces.reorder": ({ orderedIds }) =>
-      store.reorderWorkspaces(orderedIds),
-    "workspaces.setSortMode": ({ id, sortMode }) =>
-      store.setSortMode(id, sortMode),
-    "assignments.place": ({ placements }) => store.placeAssignments(placements),
-    "assignments.clear": ({ items }) => store.clearAssignments(items),
+    "sidebar.state": () => store.readState(),
+    "sidebar.edit": ({ before, after }) => store.edit(before, after),
+    "order.place": ({ placements }) => store.placeOrder(placements),
+    "order.clear": ({ items }) => store.clearOrder(items),
     "lifecycle.setStatus": ({ threadIds, status }) =>
       store.setStatus(threadIds, status),
     "lifecycle.snooze": ({ threadId, until }) =>
@@ -853,45 +782,33 @@ export default async function plugin(bb: BbPluginApi) {
     );
   }
 
-  // A deleted thread's assignment is dead weight, and a recycled id would
-  // inherit its grouping. Archived threads keep theirs — they come back.
+  // A deleted thread's position is dead weight, and a recycled id would
+  // inherit it. Archived threads keep theirs — they come back.
   bb.events.on("thread.deleted", ({ thread }) => {
     executionCache.delete(thread.id);
     agentStates.delete(thread.id);
     try {
-      store.clearAssignments([{ kind: "thread", refId: thread.id }]);
+      store.clearOrder([{ kind: "thread", refId: thread.id }]);
     } catch (cause) {
-      bb.log.warn(`Could not clear assignment for deleted thread: ${cause}`);
+      bb.log.warn(`Could not clear the order row for a deleted thread: ${cause}`);
     }
   });
 
-  // ---- bb workspace ------------------------------------------------------
+  // ---- bb sidebar --------------------------------------------------------
 
   const usage = [
     "Usage:",
-    "  bb workspace list [--json]",
-    "  bb workspace show <workspace> [--json]",
-    "  bb workspace new <name> [--json]",
-    "  bb workspace rename <workspace> <new-name> [--json]",
-    "  bb workspace rm <workspace> [--move-to <workspace>] [--yes] [--json]",
-    "  bb workspace assign <workspace> (--project <id> | --thread <id>)... [--json]",
-    "  bb workspace unassign (--project <id> | --thread <id>)... [--json]",
-    "  bb workspace detach (--thread <id>)... [--json]",
-    "  bb workspace sort <workspace> (recent|manual) [--json]",
-    "  bb workspace status (in-progress|backlog|done|canceled) (--thread <id>)... [--json]",
+    "  bb sidebar list [--project <id>] [--json]",
+    "  bb sidebar status (in-progress|backlog|done|canceled) (--thread <id>)... [--json]",
+    "  bb sidebar snooze (--thread <id>) (--hours <n> | --until <epoch-ms> | --wake) [--json]",
+    "  bb sidebar order (--project <id> | --thread <id>)... [--json]",
+    "  bb sidebar unorder (--project <id> | --thread <id>)... [--json]",
     "",
-    "<workspace> is an id, a full name, or an unambiguous name prefix.",
+    "`order` puts the items in the order given, ahead of everything the",
+    "sidebar has not been told about; `unorder` hands them back to recency.",
   ].join("\n");
 
-  function countMembers(workspaceId: string): number {
-    return store
-      .readState()
-      .assignments.filter(
-        (assignment) => assignment.workspaceId === workspaceId,
-      ).length;
-  }
-
-  /** Collect repeated --project/--thread flags into item refs. */
+  /** Collect repeated --project/--thread flags into item refs, in order. */
   function collectItems(
     args: string[],
   ): { items: { kind: ItemKind; refId: string }[] } | { error: string } {
@@ -915,86 +832,49 @@ export default async function plugin(bb: BbPluginApi) {
     return { items };
   }
 
-  /** Append items to a workspace by rewriting the full placement list. */
-  function assignItems(
-    workspaceId: string | null,
-    items: { kind: ItemKind; refId: string }[],
-  ): void {
-    let placements: Placement[] = store
-      .readState()
-      .assignments.map(toPlacement);
-    for (const item of items) {
-      placements = placeItem(placements, item, {
-        workspaceId,
-        anchorRefId: null,
-        side: "after" as DropSide,
-      });
-    }
-    store.placeAssignments(placements);
+  function flagValue(args: string[], flag: string): string | null {
+    const index = args.indexOf(flag);
+    if (index === -1) return null;
+    const value = args[index + 1];
+    return value === undefined || value.startsWith("--") ? null : value;
   }
 
   bb.cli.register({
-    name: "workspace",
-    summary: "Group bb projects and threads into sidebar workspaces",
+    name: "sidebar",
+    summary: "Read and file the threads the Ultra Sidebar shows",
     commands: [
       {
         name: "list",
-        summary: "List workspaces",
-        usage: "bb workspace list [--json]",
-      },
-      {
-        name: "show",
-        summary: "Show one workspace's members",
-        usage: "bb workspace show <workspace> [--json]",
-      },
-      {
-        name: "new",
-        summary: "Create a workspace",
-        usage: "bb workspace new <name>",
-      },
-      {
-        name: "rename",
-        summary: "Rename a workspace",
-        usage: "bb workspace rename <workspace> <new-name>",
-      },
-      {
-        name: "rm",
-        summary: "Delete a workspace",
-        usage: "bb workspace rm <workspace> [--move-to <workspace>] [--yes]",
-      },
-      {
-        name: "assign",
-        summary: "Put projects or threads in a workspace",
-        usage:
-          "bb workspace assign <workspace> (--project <id> | --thread <id>)...",
-      },
-      {
-        name: "unassign",
-        summary: "Drop an explicit assignment (back to inheriting)",
-        usage: "bb workspace unassign (--project <id> | --thread <id>)...",
-      },
-      {
-        name: "detach",
-        summary: "Pin a thread to Unassigned, ignoring its project",
-        usage: "bb workspace detach (--thread <id>)...",
-      },
-      {
-        name: "sort",
-        summary: "Set a workspace's thread ordering",
-        usage: "bb workspace sort <workspace> (recent|manual)",
+        summary: "List threads with their status, order and snooze",
+        usage: "bb sidebar list [--project <id>] [--json]",
       },
       {
         name: "status",
         summary:
           "File threads in Backlog, Done or Canceled, or back In progress",
         usage:
-          "bb workspace status (in-progress|backlog|done|canceled) (--thread <id>)...",
+          "bb sidebar status (in-progress|backlog|done|canceled) (--thread <id>)...",
+      },
+      {
+        name: "snooze",
+        summary: "Park a thread in the Snoozed dock until a time",
+        usage:
+          "bb sidebar snooze --thread <id> (--hours <n> | --until <epoch-ms> | --wake)",
+      },
+      {
+        name: "order",
+        summary: "Put projects or threads in a hand-picked order",
+        usage: "bb sidebar order (--project <id> | --thread <id>)...",
+      },
+      {
+        name: "unorder",
+        summary: "Drop a hand-picked order, back to newest first",
+        usage: "bb sidebar unorder (--project <id> | --thread <id>)...",
       },
     ],
-    run(argv) {
+    async run(argv) {
       const json = argv.includes("--json");
-      const yes = argv.includes("--yes");
-      const rest = argv.filter((arg) => arg !== "--json" && arg !== "--yes");
+      const rest = argv.filter((arg) => arg !== "--json");
       const [command, ...args] = rest;
       const reply = (value: unknown, text: string) => ({
         exitCode: 0,
@@ -1011,155 +891,42 @@ export default async function plugin(bb: BbPluginApi) {
 
           case "list": {
             const state = store.readState();
-            if (state.workspaces.length === 0) {
-              return reply(
-                [],
-                'No workspaces yet. Create one with "bb workspace new <name>".',
-              );
-            }
-            const counts = new Map<string, number>();
-            for (const assignment of state.assignments) {
-              if (assignment.workspaceId === null) continue;
-              counts.set(
-                assignment.workspaceId,
-                (counts.get(assignment.workspaceId) ?? 0) + 1,
-              );
+            const statusById = new Map(
+              state.lifecycle.map((row) => [row.threadId, row]),
+            );
+            const orderById = new Map(
+              state.order
+                .filter((row) => row.kind === "thread")
+                .map((row) => [row.refId, row.sortIndex]),
+            );
+            const wantedProject = flagValue(args, "--project");
+            const threads = (
+              await bb.sdk.threads.list({ archived: false })
+            ).filter(
+              (thread) =>
+                wantedProject === null || thread.projectId === wantedProject,
+            );
+            const rows = threads.slice(0, 200).map((thread) => ({
+              threadId: thread.id,
+              projectId: thread.projectId,
+              title: thread.title,
+              status: statusById.get(thread.id)?.status ?? "in-progress",
+              snoozedUntil: statusById.get(thread.id)?.snoozedUntil ?? null,
+              sortIndex: orderById.get(thread.id) ?? null,
+            }));
+            if (rows.length === 0) {
+              return reply([], "No threads.");
             }
             return reply(
-              state.workspaces,
-              state.workspaces
-                .slice(0, 200)
-                .map((workspace) =>
-                  formatWorkspace(workspace, counts.get(workspace.id) ?? 0),
+              rows,
+              rows
+                .map(
+                  (row) =>
+                    `${row.threadId}  ${String(row.status).padEnd(11)} ${
+                      row.title ?? "Untitled"
+                    }`,
                 )
                 .join("\n"),
-            );
-          }
-
-          case "show": {
-            const selector = args[0];
-            if (selector === undefined) return fail(usage);
-            const found = store.findWorkspace(selector);
-            if (found === null)
-              return fail(`No workspace matching "${selector}".`);
-            if ("ambiguous" in found) {
-              return fail(
-                `"${selector}" matches several workspaces:\n` +
-                  found.ambiguous.map((w) => `  ${w.id}  ${w.name}`).join("\n"),
-              );
-            }
-            const members = store
-              .readState()
-              .assignments.filter((a) => a.workspaceId === found.id)
-              .slice(0, 200);
-            return reply(
-              { workspace: found, members },
-              [
-                formatWorkspace(found, members.length),
-                ...members.map((m) => `  ${m.kind.padEnd(7)} ${m.refId}`),
-              ].join("\n"),
-            );
-          }
-
-          case "new": {
-            const name = args.join(" ").trim();
-            if (name === "") return fail(usage);
-            const { workspace } = store.createWorkspace(name);
-            return reply(
-              workspace,
-              `Created ${workspace.id}  ${workspace.name}`,
-            );
-          }
-
-          case "rename": {
-            const selector = args[0];
-            const name = args.slice(1).join(" ").trim();
-            if (selector === undefined || name === "") return fail(usage);
-            const found = store.findWorkspace(selector);
-            if (found === null || "ambiguous" in found) {
-              return fail(`No single workspace matching "${selector}".`);
-            }
-            store.renameWorkspace(found.id, name);
-            return reply(
-              { id: found.id, name },
-              `Renamed ${found.id} to ${name}`,
-            );
-          }
-
-          case "rm": {
-            const selector = args[0];
-            if (selector === undefined) return fail(usage);
-            const found = store.findWorkspace(selector);
-            if (found === null || "ambiguous" in found) {
-              return fail(`No single workspace matching "${selector}".`);
-            }
-            const moveToIndex = args.indexOf("--move-to");
-            const moveTo = moveToIndex === -1 ? null : args[moveToIndex + 1];
-            const memberCount = countMembers(found.id);
-            // Refuse a silent destructive default: an agent should have to say
-            // what happens to the members.
-            if (!yes && moveTo === undefined) {
-              return fail(
-                `"${found.name}" holds ${memberCount} item(s). Re-run with --yes ` +
-                  `to detach them, or --move-to <workspace> to keep them grouped.`,
-              );
-            }
-            let reassign = "detach";
-            if (moveTo !== undefined && moveTo !== null) {
-              const target = store.findWorkspace(moveTo);
-              if (target === null || "ambiguous" in target) {
-                return fail(`No single workspace matching "${moveTo}".`);
-              }
-              reassign = target.id;
-            }
-            store.removeWorkspace(found.id, reassign);
-            return reply(
-              { removed: found.id, movedItems: memberCount, reassign },
-              `Deleted ${found.name} (${memberCount} item(s) ${
-                reassign === "detach" ? "detached" : "moved"
-              })`,
-            );
-          }
-
-          case "assign": {
-            const selector = args[0];
-            if (selector === undefined) return fail(usage);
-            const found = store.findWorkspace(selector);
-            if (found === null || "ambiguous" in found) {
-              return fail(`No single workspace matching "${selector}".`);
-            }
-            const collected = collectItems(args.slice(1));
-            if ("error" in collected) return fail(collected.error);
-            assignItems(found.id, collected.items);
-            return reply(
-              { workspaceId: found.id, items: collected.items },
-              `Moved ${collected.items.length} item(s) into ${found.name}`,
-            );
-          }
-
-          case "unassign": {
-            const collected = collectItems(args);
-            if ("error" in collected) return fail(collected.error);
-            store.clearAssignments(collected.items);
-            return reply(
-              { cleared: collected.items },
-              `Cleared ${collected.items.length} assignment(s)`,
-            );
-          }
-
-          case "detach": {
-            const collected = collectItems(args);
-            if ("error" in collected) return fail(collected.error);
-            if (collected.items.some((item) => item.kind === "project")) {
-              return fail(
-                "Only threads can be detached. A project with no assignment is " +
-                  "already Unassigned — use `bb workspace unassign` instead.",
-              );
-            }
-            assignItems(null, collected.items);
-            return reply(
-              { detached: collected.items },
-              `Detached ${collected.items.length} thread(s) to Unassigned`,
             );
           }
 
@@ -1185,23 +952,80 @@ export default async function plugin(bb: BbPluginApi) {
             );
           }
 
-          case "sort": {
-            const selector = args[0];
-            const mode = args[1];
-            if (
-              selector === undefined ||
-              (mode !== "recent" && mode !== "manual")
-            ) {
-              return fail(usage);
+          case "snooze": {
+            const collected = collectItems(args);
+            if ("error" in collected) return fail(collected.error);
+            if (collected.items.length !== 1) {
+              return fail("Snooze takes exactly one --thread <id>.");
             }
-            const found = store.findWorkspace(selector);
-            if (found === null || "ambiguous" in found) {
-              return fail(`No single workspace matching "${selector}".`);
+            const item = collected.items[0]!;
+            if (item.kind !== "thread") return fail("Only threads snooze.");
+            const hours = flagValue(args, "--hours");
+            const untilFlag = flagValue(args, "--until");
+            let until: number | null = null;
+            if (args.includes("--wake")) {
+              until = null;
+            } else if (hours !== null) {
+              const parsed = Number.parseFloat(hours);
+              if (!Number.isFinite(parsed) || parsed <= 0) {
+                return fail("--hours needs a positive number.");
+              }
+              until = Date.now() + parsed * 60 * 60 * 1000;
+            } else if (untilFlag !== null) {
+              const parsed = Number.parseInt(untilFlag, 10);
+              if (!Number.isFinite(parsed)) {
+                return fail("--until needs an epoch-millisecond timestamp.");
+              }
+              until = parsed;
+            } else {
+              return fail("Pass --hours <n>, --until <epoch-ms>, or --wake.");
             }
-            store.setSortMode(found.id, mode);
+            store.setSnoozed(item.refId, until);
             return reply(
-              { id: found.id, sortMode: mode },
-              `${found.name}: ${mode}`,
+              { threadId: item.refId, until },
+              until === null
+                ? `Woke ${item.refId}`
+                : `Snoozed ${item.refId} until ${new Date(until).toISOString()}`,
+            );
+          }
+
+          case "order": {
+            const collected = collectItems(args);
+            if ("error" in collected) return fail(collected.error);
+            // The given items lead; everything already placed follows, so a
+            // partial list never scrambles the rest.
+            const existing = store
+              .readState()
+              .order.map(toPlacement)
+              .filter(
+                (placement) =>
+                  !collected.items.some(
+                    (item) =>
+                      item.kind === placement.kind &&
+                      item.refId === placement.refId,
+                  ),
+              );
+            let placements: Placement[] = [...collected.items, ...existing];
+            for (const item of collected.items) {
+              placements = placeItem(placements, item, {
+                anchorRefId: null,
+                side: "after",
+              });
+            }
+            store.placeOrder(placements);
+            return reply(
+              { ordered: collected.items },
+              `Ordered ${collected.items.length} item(s)`,
+            );
+          }
+
+          case "unorder": {
+            const collected = collectItems(args);
+            if ("error" in collected) return fail(collected.error);
+            store.clearOrder(collected.items);
+            return reply(
+              { cleared: collected.items },
+              `Cleared ${collected.items.length} hand-picked position(s)`,
             );
           }
         }
@@ -1212,5 +1036,5 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.log.info("workspace sidebar ready");
+  bb.log.info("ultra sidebar ready");
 }

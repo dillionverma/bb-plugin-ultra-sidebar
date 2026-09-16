@@ -1,12 +1,12 @@
-import type { WorkspaceState } from "./types";
+import type { SidebarState } from "./types";
 
 // Apply only rows changed by this action. Unrelated edits from another client
 // survive; a conflicting edit fails atomically instead of silently overwriting it.
 export function applyStateChange(
-  current: WorkspaceState,
-  before: WorkspaceState,
-  after: WorkspaceState,
-): WorkspaceState {
+  current: SidebarState,
+  before: SidebarState,
+  after: SidebarState,
+): SidebarState {
   const merge = <T>(
     liveRows: T[],
     oldRows: T[],
@@ -28,18 +28,12 @@ export function applyStateChange(
     }
     return [...live.values()];
   };
-  const result: WorkspaceState = {
+  const result: SidebarState = {
     revision: current.revision,
-    workspaces: merge(
-      current.workspaces,
-      before.workspaces,
-      after.workspaces,
-      (row) => row.id,
-    ),
-    assignments: merge(
-      current.assignments,
-      before.assignments,
-      after.assignments,
+    order: merge(
+      current.order,
+      before.order,
+      after.order,
       (row) => `${row.kind}:${row.refId}`,
     ),
     lifecycle: merge(
@@ -49,16 +43,7 @@ export function applyStateChange(
       (row) => row.threadId,
     ),
   };
-  const ids = new Set(result.workspaces.map((w) => w.id));
-  if (
-    result.assignments.some(
-      (a) => a.workspaceId !== null && !ids.has(a.workspaceId),
-    )
-  ) {
-    throw new Error("That workspace changed elsewhere. Refresh and try again.");
-  }
-  result.workspaces.sort((a, b) => a.sortIndex - b.sortIndex);
-  result.assignments.sort((a, b) => a.sortIndex - b.sortIndex);
+  result.order.sort((a, b) => a.sortIndex - b.sortIndex);
   return result;
 }
 

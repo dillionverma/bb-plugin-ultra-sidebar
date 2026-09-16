@@ -1,7 +1,8 @@
 # Ultra Sidebar
 
-Group bb projects and threads into collapsible sidebar workspaces, with
-subagent threads nested under the thread that spawned them.
+Group bb threads into collapsible sidebar sections — a pinned list on top,
+then by project or by status — with subagent threads nested under the thread
+that spawned them.
 
 > **This plugin replaces bb's sidebar thread list**, which is bb's one
 > *exclusive* slot — only one plugin can fill the sidebar's scroll area. If you
@@ -24,28 +25,31 @@ bb plugin install .
 
 ## What it does
 
-- **Workspaces** are named containers you create yourself. Each holds projects
-  and threads, and renders as a collapsible section.
-- **A project or thread belongs to exactly one workspace.** Anything
-  unassigned falls into a built-in **Unassigned** section.
-- **Threads inherit their project's workspace**, so filing a project files its
-  threads. A single thread can override that, and appears in its new workspace
-  under a muted `from <Project>` heading so the override stays legible.
-- **Subagent threads nest under their parent**, recursively, collapsed by
+- **Projects are the only containers.** Every thread sits under the project bb
+  says it belongs to, and each project renders as a collapsible section. There
+  is nothing else to file things into, and nothing to set up.
+- **Pinned threads lead the list.** Pin a thread and it leaves its project for
+  a **Pinned** section at the very top, where it stays until you unpin it. The
+  pin is bb's own, so it is the same pin bb's built-in sidebar shows, and a
+  pinned row names its own project since the heading above it does not.
+- **Or group by status instead**, and the five buckets replace the project
+  sections. Rows name their project either way when the heading does not.
+- **Subagent threads nest under their parent**, recursively and at any depth:
+  a grandchild indents past its parent, a great-grandchild past that. The step
+  tightens as the tree deepens so a title always has room, and past twelve
+  levels a row also carries its level as a number. They are collapsed by
   default. A collapsed parent shows the descendant count and lights up when a
-  subagent is waiting, so nothing hides behind a chevron. Dragging a parent
-  moves its whole subtree.
-- **Agents a thread runs inside its own turn** — a provider's subagent calls,
-  which have no BB thread — sit in the same tree under their parent, named as
-  the parent called them, shimmering while they run and keeping a check, a
-  failure or a stopped mark afterwards. They count towards the collapsed
-  parent's badge. There is nothing to open, so the rows are read-only, and
-  they are followed only for threads that are working or expanded.
+  subagent anywhere below it is waiting; opening the thread that is waiting
+  opens every chevron above it. Dragging a parent moves its whole subtree.
 
 ## Using it
 
-- **Drag** a thread, a project header or a workspace header to move or reorder
-  it. Hovering a collapsed workspace during a drag opens it.
+- **Drag** a thread to reorder it inside its section, or onto another heading
+  to say what that heading means: a status bucket files it, **Pinned** pins it,
+  and its own project takes it back — unpinned, and off whatever parked pile it
+  was on. Another project's heading does nothing, because a drag cannot change
+  which project a thread belongs to. Drag a project heading to reorder the
+  projects. Hovering a collapsed section during a drag opens it.
 - **Right-click** anything for the same operations plus rename, pin, archive
   and delete. Everything reachable by drag is reachable from the menu.
 - **Statuses**, the way Conductor does them. Every thread is in exactly one
@@ -53,10 +57,11 @@ bb plugin install .
   request is open), **Done** (its pull request merged, or you marked it),
   **Backlog** and **Canceled** (you moved it there). A status you set by hand
   sticks until you change it. Grouping by status shows the five buckets;
-  grouping by workspace or project keeps Done, Backlog and Canceled in their
-  own headings at the bottom so finished work stops crowding the list.
-- **Hover** a row to reveal two quick actions beside its title: a clock that
-  snoozes the thread until 9am tomorrow, and a **Done** checkmark. Snooze moves
+  grouping by project keeps Done, Backlog and Canceled in their own headings
+  at the bottom so finished work stops crowding the list.
+- **Hover** a row to reveal its quick actions beside the title: a pin that
+  lifts the thread to the top, a clock that snoozes it until 9am tomorrow, and
+  a **Done** checkmark. Snooze moves
   the thread out of the list and into the **Snoozed** dock at the bottom of the
   sidebar, where it shows its wake time and a **Wake** button; it does not pause
   its agent or schedule work. A snoozed thread comes back on its own the moment
@@ -77,22 +82,27 @@ bb plugin install .
   bottom to top with each PR's state and check result.
 - **`Alt` + `↑`/`↓`** on a focused row moves it without a pointer.
 - **The sliders button** at the top of the list opens every view option:
-  group by status, workspace or project; pick which
+  group by project or status; pick which
   facts each row shows under its title (project, branch, machine, model,
   pull request, agent); include archived threads; collapse or
   expand every section. Row details and grouping persist per client.
-- Reordering threads by hand switches that workspace from "most recent" to your
-  manual order. Flip it back from the workspace's context menu.
+- Threads sort newest-created first until you place them by hand. Dragging one
+  places every row in that section at once, so the rest do not scatter, and the
+  section's heading picks up a small sort glyph. A new thread still arrives
+  above the ones you arranged, so a hand-picked order never buries today's
+  work. **Sort by most recent** in the heading's context menu undoes it.
+- Positions are one global order sliced by whatever you are grouping by, so a
+  drag inside a status bucket and a drag inside a project group can never
+  disagree about the same two rows.
 
 ## Undo and keyboard shortcuts
 
-Every status change, snooze, workspace move, reorder, workspace edit and thread
-rename has an **Undo** toast. **Ctrl/Cmd+Z** undoes and **Ctrl/Cmd+Shift+Z** redoes;
+Every status change, snooze, reorder and thread rename has an **Undo** toast. **Ctrl/Cmd+Z** undoes and **Ctrl/Cmd+Shift+Z** redoes;
 Windows/Linux also support Ctrl+Y. Undo is also available in each action toast.
 History holds the last 50 actions in this sidebar session and resets on reload.
-Bulk actions and drag operations undo in one step. Changes to the same workspace
-rows in another client cause a conflict instead of being overwritten. Archive and
-delete continue to use bb's own flows and are outside this history.
+Bulk actions and drag operations undo in one step. Changes to the same rows in
+another client cause a conflict instead of being overwritten. Pinning, archiving
+and deleting continue to use bb's own flows and are outside this history.
 
 Use **Ctrl/Cmd-click** to toggle selected threads and **Shift-click** for a range,
 or use the row checkboxes, revealed on hover, focus, or touch. The floating selection controls can move,
@@ -109,7 +119,7 @@ With a sidebar row focused:
 | Enter / Shift+Enter | Open / open in split |
 | F2 | Rename |
 | D | Mark done / reopen |
-| M | Search for a destination workspace |
+| P | Pin to the top / unpin |
 | S | Snooze until tomorrow at 9am |
 | Alt+↑ / ↓ | Reorder |
 | ? | Shortcut help |
@@ -117,20 +127,24 @@ With a sidebar row focused:
 Text fields, editors, terminals, menus and dialogs retain their own keyboard
 behavior. When a focused thread disappears, focus moves to the next visible row.
 
-Grouping lives in this plugin's own SQLite database. bb's projects and threads
-are never modified, so uninstalling loses the grouping and nothing else.
+Order, status and snooze live in this plugin's own SQLite database. bb's own
+projects and threads are never modified for them, so uninstalling loses that
+state and nothing else.
 
 ## From a terminal
 
-`bb workspace` does everything the sidebar does — see
-[skills/workspaces/SKILL.md](skills/workspaces/SKILL.md), which is also loaded
-into agent threads so agents can file things for you.
+`bb sidebar` reads and files what the sidebar shows — see
+[skills/sidebar/SKILL.md](skills/sidebar/SKILL.md), which is also loaded into
+agent threads so agents can triage for you.
 
 ```
-bb workspace new "Client work"
-bb workspace assign "Client work" --project proj_abc123
-bb workspace list
+bb sidebar list --project proj_abc123
+bb sidebar status done --thread thr_abc123
+bb sidebar snooze --thread thr_abc123 --hours 4
 ```
+
+Pinning is not there: it belongs to bb rather than to this plugin, and the
+plugin SDK exposes it only to the sidebar itself.
 
 ## Tests
 
@@ -138,7 +152,7 @@ bb workspace list
 npm test
 ```
 
-Covers the resolver's inheritance rules and the rendered list, including the
+Covers the resolver's ordering and pinning rules and the rendered list, including the
 assertion that every row carries `data-sidebar-thread-shortcut-target` and
 `data-sidebar-thread-id` — a DOM contract bb's keyboard shortcuts depend on,
 and one whose breakage is invisible until someone reaches for the keyboard.
@@ -184,12 +198,12 @@ Goal and scheduled-message details also open directly from their own chips.
 
 ## Sidebar layout and actions
 
-- Compact rows use BB’s native background and theme colors, the original Linear status colors, and tree connectors for expanded groups and subagents.
+- Compact rows use BB's native background and theme colors, the original Linear status colors, and tree connectors for expanded groups and subagents.
 - Threads waiting on an answer or approval show a solid amber **Your turn** badge beside the title in both row layouts. A static return arrow replaces the activity animation until the request is resolved; opening or selecting the thread does not hide the badge.
 - Active titles retain neutral text shimmer; reduced-motion settings disable it. Agent, project, machine and modes share one supporting line; the View options → Agent switch hides the agent icon. Click Goal or the machine icon for details, including actual goal objective and usage.
-- Queued message times remain attached to their threads. The bottom dock holds two collapsible sections that stay in view however long the list is: **Scheduled** reads recurring and one-time automations and respects the workspace and project filters, and **Snoozed** lists parked threads with their wake time. Rows in the dock are built like thread rows: a glyph, the name, and one word on the right in its status colour (next run, "Failed 2h ago", "Paused", a live orb while "Running"). Clicking a schedule opens the thread that ran it; before the first run it shows the details instead. Hovering reveals Run now, Pause/Resume and an info button; right-click gives the same menu. The details popover has **Run now**, **Pause**/**Resume**, **Open last run**, and **Delete…**, which asks once more before removing the automation for good. Opening the Automations panel itself from the sidebar is not possible: the plugin SDK only navigates to a plugin's own panels. Missing or disabled Automations hides the section; loading failures offer Retry.
+- Queued message times remain attached to their threads. The bottom dock holds two collapsible sections that stay in view however long the list is: **Scheduled** reads recurring and one-time automations and respects the project filter, and **Snoozed** lists parked threads with their wake time. Rows in the dock are built like thread rows: a glyph, the name, and one word on the right in its status colour (next run, "Failed 2h ago", "Paused", a live orb while "Running"). Clicking a schedule opens the thread that ran it; before the first run it shows the details instead. Hovering reveals Run now, Pause/Resume and an info button; right-click gives the same menu. The details popover has **Run now**, **Pause**/**Resume**, **Open last run**, and **Delete…**, which asks once more before removing the automation for good. Opening the Automations panel itself from the sidebar is not possible: the plugin SDK only navigates to a plugin's own panels. Missing or disabled Automations hides the section; loading failures offer Retry.
 - Select threads from the toolbar or right-click empty sidebar space. Checkboxes occupy a separate column; status icons remain visible. The small bottom selection menu reserves its own space and closes after an action, Escape, dismissal, or clicking away. Hidden selections remain counted. Cmd/Ctrl-click and Shift selection remain available.
-- Thread, project, and workspace context menus group navigation, organization, preferences, and removal actions with icons. Right-click empty sidebar space for creation, selection, collapse/expand, and view options. Native text-field context menus remain available.
+- Thread and section context menus group navigation, organization, preferences, and removal actions with icons. Right-click empty sidebar space for creation, selection, collapse/expand, and view options. Native text-field context menus remain available.
 - View options → Compact rows restores the detailed row layout.
 - Project headings, the project badge on rows, and the details card use each project's own artwork when it has some: the BB icon named by `bb.branding.icon` in its `package.json`, an icon or logo path declared there, or a conventionally named `favicon`, `icon`, `logo`, or `apple-touch-icon` file found in the project's default checkout (SVG, PNG, WebP, JPEG, or ICO, under 2 MB; SVGs are checked for scripts and external references before they are served). Projects without any keep the folder icon. View options → Project icons turns the lookup off.
 
@@ -201,10 +215,10 @@ The detail card pairs the full title with a status badge, combines project and m
 
 ### Quick handoff
 
-Hover or keyboard-focus a thread and choose **Hand off thread**. Search is at the top, with provider icon tabs directly underneath. Click a provider tab, then a model, or choose **Same agent**. Use the arrow keys and Enter for keyboard selection. Tooltips explain the action and show full model names. The successor opens automatically and keeps the source checkout and sidebar workspace. Errors stay in the picker for retry. Requires the Ultra Topbar plugin; its equivalent CLI is `bb handoff THREAD-ID --provider PROVIDER-ID --model MODEL-ID`.
+Hover or keyboard-focus a thread and choose **Hand off thread**. Search is at the top, with provider icon tabs directly underneath. Click a provider tab, then a model, or choose **Same agent**. Use the arrow keys and Enter for keyboard selection. Tooltips explain the action and show full model names. The successor opens automatically and keeps the source checkout. Errors stay in the picker for retry. Requires the Ultra Topbar plugin; its equivalent CLI is `bb handoff THREAD-ID --provider PROVIDER-ID --model MODEL-ID`.
 
 Catalogs preload on hover or keyboard focus and cache for five minutes; loaded provider tabs switch without a network request, and search text stays intact. Successful model picks are remembered on this client and sorted by frequency, then recency. Provider tabs keep their original order.
 
 The sidebar shows provider logos beside thread titles in both row layouts; the tooltip includes the model when execution metadata is available.
 
-The toolbar’s left workspace and project pickers narrow all grouping modes. The project picker supports search and multiple selections; changing workspace resets those selections. Filters persist per browser.
+The toolbar's project picker narrows both groupings, the Pinned list and the docks. It supports search and multiple selections, and persists per browser.

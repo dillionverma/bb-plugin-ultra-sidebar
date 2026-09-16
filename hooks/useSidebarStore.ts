@@ -7,52 +7,40 @@ import {
 import { toast } from "sonner";
 import type { rpcContract } from "../server";
 import {
+  clearGroupOrder,
   placeItem,
   seedGroupOrder,
   toPlacement,
   type DropTarget,
 } from "../lib/order";
 import {
-  WORKSPACES_CHANGED,
+  SIDEBAR_CHANGED,
   itemKey,
   type ItemRef,
-  type SortMode,
-  type WorkspaceState,
+  type OrderEntry,
   type Placement,
-  type Assignment,
+  type SidebarState,
 } from "../lib/types";
 import type { ManualStatus } from "../lib/status";
 import { UndoHistory } from "../lib/history";
-const EMPTY_STATE: WorkspaceState = {
-  revision: -1,
-  workspaces: [],
-  assignments: [],
-  lifecycle: [],
-};
-export interface WorkspacesApi {
-  state: WorkspaceState;
+
+const EMPTY_STATE: SidebarState = { revision: -1, order: [], lifecycle: [] };
+
+export interface SidebarStoreApi {
+  state: SidebarState;
   isLoading: boolean;
   error: string | null;
-  createWorkspace(name: string): Promise<string | null>;
-  renameWorkspace(id: string, name: string): void;
-  removeWorkspace(id: string, reassign: string | "detach"): void;
-  reorderWorkspaces(orderedIds: string[]): void;
-  setSortMode(id: string, sortMode: SortMode): void;
   /** Move one item; the full post-drop list is derived here. */
   moveItem(item: ItemRef, target: DropTarget): void;
   /**
-   * Rewrite one group's order outright. Used for manual reordering, which has
-   * to seed positions for every member at once — otherwise the first drag
-   * gives one thread a position and drops the rest to the unordered tail,
-   * which reads as the sidebar scrambling itself.
+   * Rewrite one section's order outright. Used for manual reordering, which
+   * has to seed positions for every member at once — otherwise the first drag
+   * gives one thread a position and leaves the rest without one, which sorts
+   * them back above it and reads as the drop having failed.
    */
-  reorderGroup(
-    kind: ItemRef["kind"],
-    workspaceId: string | null,
-    orderedRefIds: string[],
-  ): void;
-  /** Drop the explicit row so the item goes back to inheriting. */
-  clearItems(items: ItemRef[]): void;
+  reorderGroup(kind: ItemRef["kind"], orderedRefIds: string[]): void;
+  /** Drop hand-picked positions, so these rows sort by recency again. */
+  resetOrder(kind: ItemRef["kind"], refIds: string[]): void;
   /** File threads in a bucket by hand; null lets their own facts decide. */
   setStatus(threadIds: string[], status: ManualStatus | null): void;
   /** Hide a thread until a timestamp; null wakes it. */
@@ -65,8 +53,9 @@ export interface WorkspacesApi {
   wakeEarly(threadIds: string[]): void;
 }
 
-type Change = (state: WorkspaceState) => WorkspaceState;
-export function useWorkspaces() {
+type Change = (state: SidebarState) => SidebarState;
+
+export function useSidebarStore() {
   const rpc = useRpc<typeof rpcContract>();
   const connection = useRealtimeConnectionState();
   const [state, setState] = useState(EMPTY_STATE);
@@ -81,7 +70,7 @@ export function useWorkspaces() {
       alive.current = false;
     };
   }, []);
-  const adopt = (next: WorkspaceState) => {
+  const adopt = (next: SidebarState) => {
     if (alive.current) {
       setState((old) => (next.revision >= old.revision ? next : old));
       setError(null);
@@ -102,11 +91,11 @@ export function useWorkspaces() {
       () => toast.dismiss("sidebar-action"),
     );
   const history = historyRef.current;
-  const refetch = () => rpc.call("workspaces.state").then(adopt, report);
+  const refetch = () => rpc.call("sidebar.state").then(adopt, report);
   useEffect(() => {
     void refetch();
   }, [connection]);
-  useRealtime(WORKSPACES_CHANGED, (payload) => {
+  useRealtime(SIDEBAR_CHANGED, (payload) => {
     const revision =
       typeof payload === "object" && payload !== null && "revision" in payload
         ? Number(payload.revision)
@@ -114,8 +103,8 @@ export function useWorkspaces() {
     if (!Number.isFinite(revision) || revision > stateRef.current.revision)
       void refetch();
   });
-  const edit = async (before: WorkspaceState, after: WorkspaceState) => {
-    adopt(await rpc.call("workspaces.edit", { before, after }));
+  const edit = async (before: SidebarState, after: SidebarState) => {
+    adopt(await rpc.call("sidebar.edit", { before, after }));
   };
   const changes = useRef<Change[] | null>(null);
   const change = (
@@ -128,7 +117,7 @@ export function useWorkspaces() {
       return;
     }
     void history.enqueue(async () => {
-      const before = await rpc.call("workspaces.state");
+      const before = await rpc.call("sidebar.state");
       const after = transform(before);
       if (JSON.stringify(before) === JSON.stringify(after)) return;
       await edit(before, after);
@@ -169,7 +158,7 @@ export function useWorkspaces() {
       ids: string[],
       patch: { status?: ManualStatus | null; snoozedUntil?: number | null },
     ) =>
-    (s: WorkspaceState) => {
+    (s: SidebarState) => {
       const rows = new Map(s.lifecycle.map((row) => [row.threadId, row]));
       for (const id of ids)
         rows.set(id, {
@@ -181,88 +170,24 @@ export function useWorkspaces() {
         });
       return { ...s, lifecycle: [...rows.values()] };
     };
-  const api: WorkspacesApi = {
+  const api: SidebarStoreApi = {
     state,
     error,
     isLoading: state.revision < 0 && error === null,
-    createWorkspace: async (name) => {
-      const id = `ws_${crypto.randomUUID()}`;
-      change("Workspace created", (s) => ({
-        ...s,
-        workspaces: [
-          ...s.workspaces,
-          {
-            id,
-            name,
-            sortIndex: s.workspaces.length,
-            sortMode: "recent",
-            createdAt: Date.now(),
-          },
-        ],
-      }));
-      return id;
-    },
-    renameWorkspace: (id, name) =>
-      change("Workspace renamed", (s) => ({
-        ...s,
-        workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name } : w)),
-      })),
-    removeWorkspace: (id, reassign) =>
-      change("Workspace removed", (s) => ({
-        ...s,
-        workspaces: s.workspaces.filter((w) => w.id !== id),
-        assignments:
-          reassign === "detach"
-            ? s.assignments.filter((a) => a.workspaceId !== id)
-            : s.assignments.map((a) =>
-                a.workspaceId === id ? { ...a, workspaceId: reassign } : a,
-              ),
-      })),
-    reorderWorkspaces: (ids) =>
-      change("Workspaces reordered", (s) => ({
-        ...s,
-        workspaces: s.workspaces
-          .map((w) => ({
-            ...w,
-            sortIndex: ids.indexOf(w.id) < 0 ? w.sortIndex : ids.indexOf(w.id),
-          }))
-          .sort((a, b) => a.sortIndex - b.sortIndex),
-      })),
-    setSortMode: (id, sortMode) =>
-      change("Sorting changed", (s) => ({
-        ...s,
-        workspaces: s.workspaces.map((w) =>
-          w.id === id ? { ...w, sortMode } : w,
-        ),
-      })),
     moveItem: (item, target) =>
-      change("Moved to workspace", (s) => ({
-        ...s,
-        assignments: toAssignments(
-          placeItem(s.assignments.map(toPlacement), item, target),
-        ),
-      })),
-    reorderGroup: (kind, workspaceId, ids) =>
       change("Order changed", (s) => ({
         ...s,
-        assignments: toAssignments(
-          seedGroupOrder(
-            s.assignments.map(toPlacement),
-            kind,
-            workspaceId,
-            ids,
-          ),
-        ),
+        order: toOrder(placeItem(s.order.map(toPlacement), item, target)),
       })),
-    clearItems: (items) =>
-      change("Workspace assignment cleared", (s) => ({
+    reorderGroup: (kind, ids) =>
+      change("Order changed", (s) => ({
         ...s,
-        assignments: s.assignments.filter(
-          (a) =>
-            !items.some(
-              (i) => itemKey(i.kind, i.refId) === itemKey(a.kind, a.refId),
-            ),
-        ),
+        order: toOrder(seedGroupOrder(s.order.map(toPlacement), kind, ids)),
+      })),
+    resetOrder: (kind, ids) =>
+      change("Sorted by most recent", (s) => ({
+        ...s,
+        order: toOrder(clearGroupOrder(s.order.map(toPlacement), kind, ids)),
       })),
     setStatus: (ids, status) =>
       change(
@@ -281,7 +206,7 @@ export function useWorkspaces() {
       ),
     wakeEarly: (ids) =>
       void history.enqueue(async () => {
-        const before = await rpc.call("workspaces.state");
+        const before = await rpc.call("sidebar.state");
         const after = lifecycle(ids, { snoozedUntil: null })(before);
         if (JSON.stringify(before) === JSON.stringify(after)) return;
         await edit(before, after);
@@ -289,8 +214,16 @@ export function useWorkspaces() {
   };
   return { ...api, batch, history };
 }
-function toAssignments(placements: readonly Placement[]): Assignment[] {
-  return placements
-    .filter((p) => p.kind !== "project" || p.workspaceId !== null)
-    .map((p, sortIndex) => ({ ...p, sortIndex }));
+
+function toOrder(placements: readonly Placement[]): OrderEntry[] {
+  return placements.map((placement, sortIndex) => ({
+    ...placement,
+    sortIndex,
+  }));
+}
+
+/** True when this item carries a hand-picked position. */
+export function isPlaced(state: SidebarState, item: ItemRef): boolean {
+  const key = itemKey(item.kind, item.refId);
+  return state.order.some((entry) => itemKey(entry.kind, entry.refId) === key);
 }

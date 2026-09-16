@@ -4,7 +4,7 @@
 // the toolbar read as mystery switches (the old "row details" toggle looked
 // like it flipped the model), so they are all filed here under a label.
 //
-// There is no "Sort by": within a group the order is always newest-created
+// There is no "Sort by": within a section the order is always newest-created
 // first — a stack that never reshuffles under the cursor — and the manual
 // drag already covers the case where that is not what the user wants.
 import { Icon } from "@/components/ui/icon";
@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { GroupBy } from "@/lib/regroup";
+import type { GroupBy } from "@/lib/sections";
 import type { RowDetails } from "@/hooks/useViewState";
 
 const DETAIL_LABELS: ReadonlyArray<[keyof RowDetails, string]> = [
@@ -111,7 +111,8 @@ export function ViewOptions({
 }) {
   const isLit = showArchived;
   const visibleDetails = DETAIL_LABELS.filter(
-    ([detail]) => !compactRows || detail === "machine",
+    ([detail]) =>
+      !compactRows || detail === "machine" || detail === "project",
   );
 
   return (
@@ -141,9 +142,8 @@ export function ViewOptions({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="status">Status</SelectItem>
-                  <SelectItem value="workspace">Workspace</SelectItem>
                   <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
                 </SelectContent>
               </Select>
             </Row>
@@ -204,11 +204,6 @@ export function ViewOptions({
             <ActionButton icon="ChevronsDown" label="Expand all" onClick={onExpandAll} />
           </div>
 
-          {groupBy === "workspace" ? null : (
-            <p className="text-[11px] leading-4 text-muted-foreground/70">
-              Drag to reorder is available when grouping by workspace.
-            </p>
-          )}
         </div>
       </PopoverContent>
     </Popover>

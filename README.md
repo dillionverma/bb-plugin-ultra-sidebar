@@ -6,7 +6,7 @@ A plugin for [BB](https://getbb.app).
 
 ## Highlights
 
-- **One place for parallel work.** Group by workspace, project, or status. Nest subagents under their parent thread.
+- **One place for parallel work.** Group by project or status, pin what matters to the top, and nest subagents under their parent thread.
 - **Act in batches.** Multi-select, drag, reorder, snooze, and mark work done. Undo and redo organization changes.
 - **Stay on the keyboard.** Move rows with Alt+↑/↓; use shortcuts and context menus without opening every thread.
 - **Review in context.** See branches, diffs, PRs, checks, agent activity, and stack relationships from the sidebar.
@@ -24,7 +24,7 @@ Requires BB 0.43+ and a compatible Plugin SDK (see `package.json`).
 
 Open **Settings → Appearance → Sidebar** and select Ultra Sidebar. This plugin owns the sidebar thread list; only one replacement can be active.
 
-Use `bb workspace --help` for workspace operations.
+Use `bb sidebar --help` to read and file threads from a terminal.
 
 ## Designed to stay responsive
 
@@ -44,20 +44,18 @@ Focused fixes and reproducible bug reports are welcome. Include BB version, plat
 
 ## Sidebar filters
 
-The left side of the toolbar has a workspace picker and a searchable project
-picker. Choose All workspaces, one workspace, or Unassigned. Projects can be
+The left side of the toolbar has a searchable project picker. Projects can be
 selected together; the picker stays open until Done. All projects or Clear
-removes the project filter. Changing workspace resets the project selection.
+removes the filter.
 
-Filters apply to every grouping mode, to scheduled tasks, and to the Snoozed
-dock. A thread explicitly
-filed in a workspace follows that placement, including its subagent tree.
-Schedules follow their project's workspace. Empty projects remain available in
-the picker and in project grouping. An empty result offers Clear filters.
+The filter applies to both groupings, to the Pinned list, to scheduled tasks,
+and to the Snoozed dock — a thread follows its project wherever it shows,
+including its subagent tree. An empty result offers Clear filters.
 
-Selections are local to each browser, survive reloads, and do not change project
-or thread membership. Existing single-project preferences carry forward. Deleted
-workspace or project selections fall back to the remaining valid selection.
+Selections are local to each browser, survive reloads, and change nothing about
+project or thread membership. Existing single-project preferences carry
+forward, and a selection naming a project that no longer exists is ignored
+rather than emptying the sidebar.
 
 ## Compatibility
 

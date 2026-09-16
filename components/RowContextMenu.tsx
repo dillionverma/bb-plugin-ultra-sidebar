@@ -4,12 +4,12 @@
 // menu does through experimental_useSidebarThreadActions — including
 // requestDelete, which opens bb's confirmation rather than deleting silently.
 import { useRef, type ReactNode } from "react";
+import { toast } from "sonner";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuGroup,
-  ContextMenuLabel,
   ContextMenuShortcut,
   ContextMenuItem,
   ContextMenuSeparator,
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Icon } from "@/components/ui/icon";
 import type { ItemRef } from "@/lib/types";
+import type { Section } from "@/lib/sections";
 import { STATUS_BUCKETS, type ManualStatus } from "@/lib/status";
 import { useSidebar } from "./sidebar-context";
 import { StatusIcon } from "./StatusIcon";
@@ -45,56 +46,21 @@ const SNOOZE_CHOICES = [
   { label: "For a week", ms: 7 * 24 * 60 * 60 * 1000 },
 ];
 
-function MoveMenu({
-  item,
-  currentWorkspaceId,
-  canReorder = true,
-}: {
-  item: ItemRef;
-  currentWorkspaceId: string | null;
-  canReorder?: boolean;
-}) {
+/**
+ * Everything the drag does, from the keyboard. A thread cannot be dragged
+ * into another project — bb owns that — so what is left is its position in
+ * the list it is already in.
+ */
+function OrderMenu({ item, canReorder = true }: { item: ItemRef; canReorder?: boolean }) {
   const sidebar = useSidebar();
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
-        <Icon name="MoveTo" />
-        Move
-        <ContextMenuShortcut>M</ContextMenuShortcut>
+        <Icon name="Sort" />
+        Order
       </ContextMenuSubTrigger>
       <ContextMenuSubContent className="w-56">
-        <ContextMenuGroup aria-label="Workspace destination">
-          <ContextMenuLabel>Move to workspace</ContextMenuLabel>
-          {sidebar.workspaces.length === 0 ? (
-            <ContextMenuItem disabled>
-              <Icon name="Folder" />No workspaces yet
-            </ContextMenuItem>
-          ) : sidebar.workspaces.map((workspace) => (
-            <ContextMenuItem
-              key={workspace.id}
-              disabled={workspace.id === currentWorkspaceId}
-              onSelect={() => sidebar.moveTo(item, workspace.id)}
-            >
-              <Icon name="Folder" />
-              <span className="min-w-0 truncate">{workspace.name}</span>
-              {workspace.id === currentWorkspaceId && <Icon name="Check" className="ml-auto" />}
-            </ContextMenuItem>
-          ))}
-          {item.kind === "thread" && (
-            <ContextMenuItem
-              disabled={currentWorkspaceId === null}
-              onSelect={() => sidebar.moveTo(item, null)}
-            >
-              <Icon name="FolderUnknown" />Unassigned
-            </ContextMenuItem>
-          )}
-          <ContextMenuItem onSelect={() => sidebar.clearItem(item)}>
-            <Icon name="FolderSync" />
-            {item.kind === "thread" ? "Follow its project" : "Remove from workspace"}
-          </ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
-        <ContextMenuGroup aria-label="Order in group">
+        <ContextMenuGroup aria-label="Order in section">
           <ContextMenuItem onSelect={() => sidebar.nudge(item, -1)} disabled={!canReorder}>
             <Icon name="ArrowUp" />Move up
             <ContextMenuShortcut>Alt ↑</ContextMenuShortcut>
@@ -112,7 +78,6 @@ function MoveMenu({
 export function RowContextMenu({
   children,
   item,
-  currentWorkspaceId,
   thread,
   manualStatus,
   pullRequestUrl = null,
@@ -120,7 +85,6 @@ export function RowContextMenu({
 }: {
   children: ReactNode;
   item: ItemRef;
-  currentWorkspaceId: string | null;
   thread: PluginSidebarThread;
   manualStatus: ManualStatus | null;
   /** The thread's pull request on the git host, when it has one. */
@@ -132,6 +96,17 @@ export function RowContextMenu({
   // but Rename that is what we want; for Rename it blurs the input that just
   // opened, which commits an empty edit and closes it again.
   const keepFocus = useRef(false);
+  const copyThreadLink = async () => {
+    const path = thread.projectId === "proj_personal"
+      ? `/threads/${encodeURIComponent(thread.id)}`
+      : `/projects/${encodeURIComponent(thread.projectId)}/threads/${encodeURIComponent(thread.id)}`;
+    try {
+      await navigator.clipboard.writeText(new URL(path, window.location.origin).toString());
+      toast.success("Thread link copied");
+    } catch {
+      toast.error("Couldn't copy thread link");
+    }
+  };
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild onContextMenu={(event) => event.stopPropagation()}>
@@ -146,6 +121,9 @@ export function RowContextMenu({
         }}
       >
         <ContextMenuGroup aria-label="Open thread">
+          <ContextMenuItem onSelect={() => { void copyThreadLink(); }}>
+            <Icon name="Copy" />Copy thread link
+          </ContextMenuItem>
           <ContextMenuItem onSelect={() => sidebar.openThread(thread.id, false)}>
             <Icon name="MessageSquare" />Open
           </ContextMenuItem>
@@ -171,7 +149,12 @@ export function RowContextMenu({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup aria-label="Organize thread">
-          <MoveMenu item={item} currentWorkspaceId={currentWorkspaceId} canReorder={thread.parentThreadId === null} />
+          <ContextMenuItem onSelect={() => sidebar.setPinned(thread.id, !thread.isPinned)}>
+            <Icon name={thread.isPinned ? "PinOff" : "Pin"} />
+            {thread.isPinned ? "Unpin from top" : "Pin to top"}
+            <ContextMenuShortcut>P</ContextMenuShortcut>
+          </ContextMenuItem>
+          <OrderMenu item={item} canReorder={thread.parentThreadId === null} />
           <ContextMenuSub>
             <ContextMenuSubTrigger>
               <Icon name="CircleCheck" />Status
@@ -217,10 +200,6 @@ export function RowContextMenu({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup aria-label="Thread preferences">
-          <ContextMenuItem onSelect={() => sidebar.setPinned(thread.id, !thread.isPinned)}>
-            <Icon name={thread.isPinned ? "PinOff" : "Pin"} />
-            {thread.isPinned ? "Unpin" : "Pin"}
-          </ContextMenuItem>
           <ContextMenuItem onSelect={() => sidebar.setRead(thread.id, thread.isUnread)}>
             <Icon name={thread.isUnread ? "MailOpen" : "Mail"} />
             {thread.isUnread ? "Mark read" : "Mark unread"}
@@ -244,99 +223,64 @@ export function RowContextMenu({
   );
 }
 
-export function ProjectContextMenu({
+/**
+ * The heading's menu. Which items it carries depends on what the heading is:
+ * only a project can start a thread, and only a hand-ordered section has an
+ * order worth dropping.
+ */
+export function SectionContextMenu({
   children,
-  projectId,
-  currentWorkspaceId,
+  section,
 }: {
   children: ReactNode;
-  projectId: string;
-  currentWorkspaceId: string | null;
+  section: Section;
 }) {
   const sidebar = useSidebar();
-  const item: ItemRef = { kind: "project", refId: projectId };
+  const projectId = section.projectId;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild onContextMenu={(event) => event.stopPropagation()}>
         {children}
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
-        <ContextMenuGroup>
-          <ContextMenuItem onSelect={() => sidebar.newThreadIn(projectId)}>
-            <Icon name="MessageSquarePlus" />New thread here
-          </ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
-        <ContextMenuGroup>
-          <MoveMenu item={item} currentWorkspaceId={currentWorkspaceId} />
-        </ContextMenuGroup>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-export function WorkspaceContextMenu({
-  children,
-  workspaceId,
-  sortMode,
-  onRename,
-}: {
-  children: ReactNode;
-  workspaceId: string | null;
-  sortMode: "recent" | "manual";
-  onRename(): void;
-}) {
-  const sidebar = useSidebar();
-  const keepFocus = useRef(false);
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild onContextMenu={(event) => event.stopPropagation()}>
-        {children}
-      </ContextMenuTrigger>
-      <ContextMenuContent
-        className="w-52"
-        onCloseAutoFocus={(event) => {
-          if (!keepFocus.current) return;
-          keepFocus.current = false;
-          event.preventDefault();
-        }}
-      >
-        {workspaceId === null ? (
-          <ContextMenuGroup>
-            <ContextMenuItem disabled><Icon name="Info" />Items with no workspace land here</ContextMenuItem>
-          </ContextMenuGroup>
-        ) : (
-          <ContextMenuGroup aria-label="Workspace actions">
-            <ContextMenuItem
-              onSelect={() => {
-                keepFocus.current = true;
-                onRename();
-              }}
-            >
-              <Icon name="Edit" />Rename
-              <ContextMenuShortcut>F2</ContextMenuShortcut>
-            </ContextMenuItem>
-            <ContextMenuItem
-              onSelect={() =>
-                sidebar.setSortMode(
-                  workspaceId,
-                  sortMode === "manual" ? "recent" : "manual",
-                )
-              }
-            >
-              <Icon name="Sort" />
-              {sortMode === "manual"
-                ? "Sort by most recent"
-                : "Keep my manual order"}
-            </ContextMenuItem>
+      <ContextMenuContent className="w-56">
+        {projectId !== null && (
+          <>
+            <ContextMenuGroup>
+              <ContextMenuItem onSelect={() => sidebar.newThreadIn(projectId)}>
+                <Icon name="MessageSquarePlus" />New thread here
+              </ContextMenuItem>
+            </ContextMenuGroup>
             <ContextMenuSeparator />
-            <ContextMenuItem
-              variant="destructive"
-              onSelect={() => sidebar.removeWorkspace(workspaceId)}
-            >
-              <Icon name="Trash2" />Delete workspace
+            <ContextMenuGroup aria-label="Order projects">
+              <ContextMenuItem
+                onSelect={() => sidebar.nudge({ kind: "project", refId: projectId }, -1)}
+              >
+                <Icon name="ArrowUp" />Move project up
+              </ContextMenuItem>
+              <ContextMenuItem
+                onSelect={() => sidebar.nudge({ kind: "project", refId: projectId }, 1)}
+              >
+                <Icon name="ArrowDown" />Move project down
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        )}
+        {section.kind === "pinned" && (
+          <ContextMenuGroup>
+            <ContextMenuItem disabled>
+              <Icon name="Info" />Pinned threads stay at the top
             </ContextMenuItem>
           </ContextMenuGroup>
+        )}
+        {section.manual && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup aria-label="Order threads">
+              <ContextMenuItem onSelect={() => sidebar.resetOrder(section.id)}>
+                <Icon name="Sort" />Sort by most recent
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
         )}
       </ContextMenuContent>
     </ContextMenu>

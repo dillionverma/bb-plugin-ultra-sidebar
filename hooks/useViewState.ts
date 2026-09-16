@@ -15,12 +15,8 @@ export const EXPANDED_SUBTREES_KEY = `${PREFIX}:expanded-subtrees:v1`;
 export const ROW_DETAILS_KEY = `${PREFIX}:row-details:v1`;
 export const COMPACT_ROWS_KEY = `${PREFIX}:compact-rows:v1`;
 export const PROJECT_ICONS_KEY = `${PREFIX}:project-icons:v1`;
-// Keyed by "<workspaceId>/<projectId>": the same project can appear in more
-// than one section (owned in one, foreign in another) and each collapses
-// independently.
 export const GROUP_BY_KEY = `${PREFIX}:group-by:v1`;
 export const PROJECT_FILTER_KEY = `${PREFIX}:project-filter:v1`;
-export const COLLAPSED_PROJECTS_KEY = `${PREFIX}:collapsed-projects:v1`;
 
 /**
  * Which facts the metadata line under a title shows. Each is its own switch
@@ -153,6 +149,7 @@ export function usePersistedSet(key: string): {
   has: (id: string) => boolean;
   toggle: (id: string) => void;
   set: (id: string, member: boolean) => void;
+  addAll: (ids: Iterable<string>) => void;
   replace: (ids: Iterable<string>) => void;
 } {
   const [ids, setIds] = useState<Set<string>>(() => readSet(key));
@@ -194,12 +191,32 @@ export function usePersistedSet(key: string): {
     [key],
   );
 
+  // Adding an ancestor chain is one update and at most one write. Returning
+  // `current` unchanged when nothing was added is what keeps an effect that
+  // calls this on every host push from looping.
+  const addAll = useCallback(
+    (incoming: Iterable<string>) => {
+      setIds((current) => {
+        let next: Set<string> | null = null;
+        for (const id of incoming) {
+          if (current.has(id)) continue;
+          next ??= new Set(current);
+          next.add(id);
+        }
+        if (next === null) return current;
+        writeSet(key, next);
+        return next;
+      });
+    },
+    [key],
+  );
+
   const replace = useCallback(
     (nextIds: Iterable<string>) => commit(new Set(nextIds)),
     [commit],
   );
 
-  return { has, toggle, set, replace };
+  return { has, toggle, set, addAll, replace };
 }
 
 /** A persisted value from a closed set; an unrecognized stored value resets. */

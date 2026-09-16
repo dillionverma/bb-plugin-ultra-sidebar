@@ -1,40 +1,27 @@
-// Shared vocabulary for the workspace sidebar. Imported by both the server
+// Shared vocabulary for the sidebar. Imported by both the server
 // (lib/store.server.ts, server.ts) and the app (components/*), so it must stay
 // free of node and react imports.
 
 import type { ManualStatus } from "./status";
 
-/** What a workspace can hold. Threads and projects order independently. */
+/** What can carry a hand-picked position. Threads and projects order apart. */
 export type ItemKind = "project" | "thread";
 
-/** How threads are ordered inside a project group. */
-export type SortMode = "recent" | "manual";
-
-export interface Workspace {
-  id: string;
-  name: string;
-  sortIndex: number;
-  sortMode: SortMode;
-  createdAt: number;
-}
-
 /**
- * A row exists only when the user has said something explicit. Its absence is
- * meaningful, so there are three states, not two:
+ * One hand-picked position.
  *
- *   no row                 inherit (thread -> its project's workspace,
- *                          project -> Unassigned)
- *   workspaceId: "ws_..."  explicit membership
- *   workspaceId: null      explicit detach: pin to Unassigned, do NOT inherit
+ * A row exists only once the user has dragged something. Its absence is
+ * meaningful: an item with no row has never been placed by hand and sorts by
+ * recency, above the ones that have — so a brand new thread still arrives at
+ * the top of a list somebody has reordered.
  *
- * The third state is what lets a single thread sit outside a workspace its
- * project belongs to. It is meaningless for projects, where "no row" already
- * means Unassigned, and the database CHECK rejects it.
+ * Positions are global rather than per-section. Whatever the sidebar is
+ * grouped by, a section is a slice of the same one order, so a drag inside a
+ * status bucket and a drag inside a project group cannot disagree.
  */
-export interface Assignment {
+export interface OrderEntry {
   kind: ItemKind;
   refId: string;
-  workspaceId: string | null;
   sortIndex: number;
 }
 
@@ -54,28 +41,22 @@ export interface Lifecycle {
 }
 
 /** Everything the sidebar needs from us, in one payload. */
-export interface WorkspaceState {
+export interface SidebarState {
   revision: number;
-  workspaces: Workspace[];
-  assignments: Assignment[];
+  order: OrderEntry[];
   lifecycle: Lifecycle[];
 }
 
+/** An ordered item, before positions are assigned. */
 export interface Placement {
   kind: ItemKind;
   refId: string;
-  workspaceId: string | null;
 }
 
-export interface ItemRef {
-  kind: ItemKind;
-  refId: string;
-}
-
-export const UNASSIGNED_ID = "__unassigned__";
+export type ItemRef = Placement;
 
 /** The realtime channel every mutation publishes on. */
-export const WORKSPACES_CHANGED = "workspaces-changed";
+export const SIDEBAR_CHANGED = "sidebar-changed";
 
 export function itemKey(kind: ItemKind, refId: string): string {
   return `${kind}:${refId}`;

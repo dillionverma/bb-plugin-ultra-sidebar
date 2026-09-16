@@ -7,33 +7,23 @@ describe("atomic sidebar history", () => {
   function setup() {
     const db = new Database(":memory:");
     for (const migration of MIGRATIONS) db.exec(migration);
-    const store = createStore(
-      db,
-      () => {},
-      () => "ws1",
-    );
-    store.createWorkspace("Work");
-    return { db, store };
+    return { db, store: createStore(db, () => {}) };
   }
-  it("restores status, snooze, exact order and sorting in one step, preserving unrelated work", () => {
+  it("restores status, snooze and exact order in one step, preserving unrelated work", () => {
     const { db, store } = setup();
     const before = store.readState();
     const after = structuredClone(before);
-    after.workspaces[0]!.sortMode = "manual";
-    after.assignments = [
-      { kind: "thread", refId: "a", workspaceId: "ws1", sortIndex: 0 },
-    ];
+    after.order = [{ kind: "thread", refId: "a", sortIndex: 0 }];
     after.lifecycle = [{ threadId: "a", status: "done", snoozedUntil: 123 }];
     store.edit(before, after);
     store.setStatus(["other"], "backlog");
     const undone = store.edit(after, before);
-    expect(undone.assignments).toEqual([]);
-    expect(undone.workspaces[0]!.sortMode).toBe("recent");
+    expect(undone.order).toEqual([]);
     expect(undone.lifecycle).toEqual([
       { threadId: "other", status: "backlog", snoozedUntil: null },
     ]);
     const redone = store.edit(before, after);
-    expect(redone.assignments).toEqual(after.assignments);
+    expect(redone.order).toEqual(after.order);
     expect(redone.lifecycle).toHaveLength(2);
     db.close();
   });
@@ -47,18 +37,20 @@ describe("atomic sidebar history", () => {
     expect(store.readState()).toEqual(live);
     db.close();
   });
-  it("rolls back invalid workspace references", () => {
+  it("carries an order forward, without leaving holes in the positions", () => {
     const { db, store } = setup();
-    const before = store.readState();
-    expect(() =>
-      store.edit(before, {
-        ...before,
-        assignments: [
-          { kind: "thread", refId: "a", workspaceId: "missing", sortIndex: 0 },
-        ],
-      }),
-    ).toThrow();
-    expect(store.readState()).toEqual(before);
+    store.placeOrder([
+      { kind: "thread", refId: "a" },
+      { kind: "thread", refId: "b" },
+      { kind: "project", refId: "p1" },
+    ]);
+    expect(store.readState().order).toEqual([
+      { kind: "thread", refId: "a", sortIndex: 0 },
+      { kind: "thread", refId: "b", sortIndex: 1 },
+      { kind: "project", refId: "p1", sortIndex: 2 },
+    ]);
+    store.clearOrder([{ kind: "thread", refId: "a" }]);
+    expect(store.readState().order.map((row) => row.refId)).toEqual(["b", "p1"]);
     db.close();
   });
   it("queues rapid undo/redo and keeps failed entries available to retry", async () => {

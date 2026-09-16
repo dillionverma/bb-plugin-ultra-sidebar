@@ -5,33 +5,27 @@
 // client computes the full post-drop list, the server stores it verbatim.
 // Both sides run this same code, which is why an optimistic row never jumps
 // when the server's answer arrives.
-import type { Assignment, ItemKind, ItemRef, Placement } from "./types";
+import type { ItemKind, ItemRef, OrderEntry, Placement } from "./types";
 import { itemKey } from "./types";
 
 export type DropSide = "before" | "after";
 
 export interface DropTarget {
-  workspaceId: string | null;
-  /** The row the pointer is over, or null to append to the group. */
+  /** The row the pointer is over, or null to append to the end. */
   anchorRefId: string | null;
   side: DropSide;
 }
 
-export function toPlacement(assignment: Assignment): Placement {
-  return {
-    kind: assignment.kind,
-    refId: assignment.refId,
-    workspaceId: assignment.workspaceId,
-  };
+export function toPlacement(entry: OrderEntry): Placement {
+  return { kind: entry.kind, refId: entry.refId };
 }
 
 /**
  * Move one item within the full placement list.
  *
  * Only placements of the same kind participate in ordering — projects and
- * threads are ordered independently inside a workspace — so an anchor of a
- * different kind degrades to "append to the group" rather than producing a
- * nonsensical interleave.
+ * threads order independently — so an anchor of a different kind degrades to
+ * "append" rather than producing a nonsensical interleave.
  */
 export function placeItem(
   ordered: readonly Placement[],
@@ -42,11 +36,7 @@ export function placeItem(
   const rest = ordered.filter(
     (placement) => itemKey(placement.kind, placement.refId) !== movedKey,
   );
-  const next: Placement = {
-    kind: moved.kind,
-    refId: moved.refId,
-    workspaceId: target.workspaceId,
-  };
+  const next: Placement = { kind: moved.kind, refId: moved.refId };
 
   const anchorIndex =
     target.anchorRefId === null
@@ -58,20 +48,7 @@ export function placeItem(
         );
 
   if (anchorIndex === -1) {
-    // Append after the last member of the destination group, so the item lands
-    // at the end of what the user sees rather than at the end of the table.
-    let insertAt = rest.length;
-    for (let index = rest.length - 1; index >= 0; index -= 1) {
-      const candidate = rest[index]!;
-      if (
-        candidate.kind === moved.kind &&
-        candidate.workspaceId === target.workspaceId
-      ) {
-        insertAt = index + 1;
-        break;
-      }
-    }
-    rest.splice(insertAt, 0, next);
+    rest.push(next);
     return rest;
   }
 
@@ -79,7 +56,7 @@ export function placeItem(
   return rest;
 }
 
-/** Reorder top-level workspace sections. */
+/** Reorder a list of ids around an anchor. */
 export function moveId(
   ordered: readonly string[],
   movedId: string,
@@ -96,43 +73,38 @@ export function moveId(
   return rest;
 }
 
-/** True when the drop would leave everything exactly where it already is. */
-export function isNoopDrop(
-  ordered: readonly Placement[],
-  moved: ItemRef,
-  target: DropTarget,
-): boolean {
-  const before = ordered.map((placement) =>
-    `${itemKey(placement.kind, placement.refId)}@${placement.workspaceId ?? ""}`,
-  );
-  const after = placeItem(ordered, moved, target).map((placement) =>
-    `${itemKey(placement.kind, placement.refId)}@${placement.workspaceId ?? ""}`,
-  );
-  return before.length === after.length &&
-    before.every((value, index) => value === after[index]);
-}
-
 /**
- * Seed positions for a whole group at once. Used when a manual drag first
- * flips a workspace out of recency ordering: without this, the dragged thread
- * gets a position and every other thread in the group falls to the unordered
- * tail, which reads as "my sidebar scrambled itself".
+ * Seed positions for a whole section at once. Used when a manual drag first
+ * takes a section out of recency ordering: without this, the dragged thread
+ * gets a position and every other thread in the section keeps none, so the
+ * rest would sort above it as "never placed by hand" — which reads as the
+ * sidebar scrambling itself.
+ *
+ * The members land at the end of the global list. Only rows inside one
+ * section are ever compared, so where the block sits among other sections'
+ * positions never shows.
  */
 export function seedGroupOrder(
   ordered: readonly Placement[],
   kind: ItemKind,
-  workspaceId: string | null,
   memberRefIds: readonly string[],
 ): Placement[] {
   const inGroup = new Set(memberRefIds);
   const kept = ordered.filter(
-    (placement) =>
-      !(placement.kind === kind && inGroup.has(placement.refId)),
+    (placement) => !(placement.kind === kind && inGroup.has(placement.refId)),
   );
-  const seeded: Placement[] = memberRefIds.map((refId) => ({
-    kind,
-    refId,
-    workspaceId,
-  }));
+  const seeded: Placement[] = memberRefIds.map((refId) => ({ kind, refId }));
   return [...kept, ...seeded];
+}
+
+/** Drop hand-picked positions, so these items sort by recency again. */
+export function clearGroupOrder(
+  ordered: readonly Placement[],
+  kind: ItemKind,
+  memberRefIds: readonly string[],
+): Placement[] {
+  const inGroup = new Set(memberRefIds);
+  return ordered.filter(
+    (placement) => !(placement.kind === kind && inGroup.has(placement.refId)),
+  );
 }

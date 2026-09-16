@@ -8,9 +8,7 @@ import { UndoHistory } from "../lib/history";
 const sidebar = vi.hoisted(() => ({
   setStatus: vi.fn(),
   setSnoozed: vi.fn(),
-  moveTo: vi.fn(),
   openThread: vi.fn(),
-  workspaces: [],
 }));
 vi.mock("./sidebar-context", () => ({ useSidebar: () => sidebar }));
 
@@ -88,7 +86,7 @@ describe("sidebar selection surface", () => {
     expect(slot.getByText("2 selected")).toBeTruthy();
     const toolbar = slot.getByRole("toolbar", { name: "Selected threads" });
     const footer = toolbar.parentElement!;
-    expect(footer.parentElement).toBe(slot.getByLabelText("Workspace threads"));
+    expect(footer.parentElement).toBe(slot.getByLabelText("Sidebar threads"));
     expect(slot.getByTestId("scroll-area").contains(footer)).toBe(false);
     fireEvent.click(within(toolbar).getByRole("button", { name: "Mark done" }));
     expect(sidebar.setStatus.mock.calls).toEqual([["parent", "done"], ["child", "done"]]);
@@ -135,7 +133,6 @@ describe("sidebar selection surface", () => {
     expect(slot.queryByRole("menu")).toBeNull();
     fireEvent.contextMenu(slot.getByTestId("blank-area"), { clientX: 40, clientY: 60 });
     const menu = await slot.findByRole("menu");
-    expect(within(menu).getByRole("menuitem", { name: "New workspace" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Collapse all" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "View options…" })).toBeTruthy();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "New thread" }));

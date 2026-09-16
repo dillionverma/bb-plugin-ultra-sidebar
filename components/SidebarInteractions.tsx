@@ -1,6 +1,5 @@
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { Icon } from "./ui/icon";
 import {
@@ -94,8 +93,9 @@ const shortcuts = [
   ["Shift Enter", "Open thread in split"],
   ["F2", "Rename focused thread"],
   ["D", "Mark done / reopen"],
-  ["M", "Move selected threads to workspace"],
+  ["P", "Pin selected threads to the top"],
   ["S", "Snooze selected threads until tomorrow at 9am"],
+  ["← / →", "Collapse / expand subagents, or step to parent / child"],
   ["Alt ↑ / ↓", "Reorder focused thread"],
   ["Ctrl/Cmd click", "Toggle selection"],
   ["Space", "Select focused thread"],
@@ -111,7 +111,6 @@ export function SidebarInteractions({
   children,
   threadIds,
   onNewThread,
-  onNewWorkspace,
   onCollapseAll,
   onExpandAll,
   onViewOptions,
@@ -122,7 +121,6 @@ export function SidebarInteractions({
   /** All existing ids, including collapsed or filtered-out rows. */
   threadIds?: readonly string[];
   onNewThread?(): void;
-  onNewWorkspace?(): void;
   onCollapseAll?(): void;
   onExpandAll?(): void;
   onViewOptions?(): void;
@@ -138,8 +136,6 @@ export function SidebarInteractions({
   selectedRef.current = selected;
   const anchor = useRef<string | null>(null);
   const [help, setHelp] = useState(false);
-  const [moveIds, setMoveIds] = useState<string[] | null>(null);
-  const [query, setQuery] = useState("");
   const rows = () =>
     Array.from(root.current?.querySelectorAll<HTMLAnchorElement>(ROW) ?? []);
   const ids = () => rows().map((row) => row.dataset.sidebarThreadId!);
@@ -219,13 +215,10 @@ export function SidebarInteractions({
     );
     exit();
   };
-  const move = (workspaceId: string | null) => {
-    batch("Moved to workspace", () =>
-      moveIds?.forEach((id) =>
-        sidebar.moveTo({ kind: "thread", refId: id }, workspaceId),
-      ),
-    );
-    setMoveIds(null);
+  // The pin lives on the host, not in this plugin's store, so it is not part
+  // of the undo history and does not go through `batch`.
+  const pin = (threadIds: string[], pinned: boolean) => {
+    for (const id of threadIds) sidebar.setPinned(id, pinned);
     exit();
   };
 
@@ -257,8 +250,15 @@ export function SidebarInteractions({
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    let order = ids();
-    setShownIds(order);
+    // Depth travels with the order so a collapse can hand focus to the
+    // ancestor that now represents the subtree.
+    const infos = () =>
+      rows().map((row) => ({
+        id: row.dataset.sidebarThreadId!,
+        depth: Number(row.dataset.sidebarThreadDepth ?? "0"),
+      }));
+    let order = infos();
+    setShownIds(order.map((entry) => entry.id));
     let focused: string | null = null;
     const focus = (event: FocusEvent) => {
       focused =
@@ -266,17 +266,37 @@ export function SidebarInteractions({
           ? (event.target.closest<HTMLElement>(ROW)?.dataset.sidebarThreadId ??
             null)
           : null;
-      order = ids();
+      order = infos();
     };
     el.addEventListener("focusin", focus);
     const observer = new MutationObserver(() => {
       const next = ids();
       if (focused && !next.includes(focused)) {
-        const index = order.indexOf(focused);
-        const candidate = [
-          ...order.slice(index + 1),
-          ...order.slice(0, index).reverse(),
-        ].find((id) => next.includes(id));
+        const index = order.findIndex((entry) => entry.id === focused);
+        // Collapsing an ancestor is the normal way a focused deep row
+        // disappears, and that ancestor is still on screen standing for the
+        // whole subtree — so it, not the next unrelated root below the
+        // subtree, is where focus belongs.
+        let want = (order[index]?.depth ?? 0) - 1;
+        let ancestor: string | undefined;
+        for (let i = index - 1; i >= 0 && want >= 0; i -= 1) {
+          const entry = order[i]!;
+          if (entry.depth > want) continue;
+          want = entry.depth;
+          if (next.includes(entry.id)) {
+            ancestor = entry.id;
+            break;
+          }
+          want -= 1;
+        }
+        const candidate =
+          ancestor ??
+          [
+            ...order.slice(index + 1),
+            ...order.slice(0, index).reverse(),
+          ]
+            .map((entry) => entry.id)
+            .find((id) => next.includes(id));
         if (
           document.activeElement === document.body ||
           document.activeElement === el
@@ -292,7 +312,7 @@ export function SidebarInteractions({
           .find((row) => row.dataset.sidebarThreadId === focused)
           ?.focus();
       }
-      order = next;
+      order = infos();
       setShownIds((previous) =>
         previous.length === next.length && previous.every((id, i) => id === next[i])
           ? previous
@@ -375,6 +395,39 @@ export function SidebarInteractions({
           next.focus();
         }
         handled();
+      } else if (key === "arrowright" || key === "arrowleft") {
+        // Tree navigation off the flat DOM list: a row's parent is the
+        // nearest preceding row with a smaller depth. Using depth rather
+        // than parentThreadId is what keeps this right for a promoted
+        // orphan, whose parent has no row at all.
+        const list = rows();
+        const index = list.indexOf(row);
+        const depthOf = (element: HTMLElement) =>
+          Number(element.dataset.sidebarThreadDepth ?? "0");
+        const depth = depthOf(row);
+        const expanded = row.dataset.sidebarThreadExpanded;
+        const focus = (element: HTMLElement) => {
+          anchor.current = element.dataset.sidebarThreadId!;
+          element.focus();
+        };
+        if (key === "arrowright") {
+          if (expanded === "false") sidebar.setSubtreeExpanded(id, true);
+          else {
+            const next = list[index + 1];
+            if (next && depthOf(next) > depth) focus(next);
+          }
+        } else if (expanded === "true") {
+          sidebar.setSubtreeExpanded(id, false);
+        } else {
+          for (let i = index - 1; i >= 0; i -= 1) {
+            const candidate = list[i]!;
+            if (depthOf(candidate) < depth) {
+              focus(candidate);
+              break;
+            }
+          }
+        }
+        handled();
       } else if (key === "enter" && event.shiftKey) {
         sidebar.openThread(id, true);
         handled();
@@ -384,9 +437,8 @@ export function SidebarInteractions({
       } else if (key === "s") {
         snooze(targets(id));
         handled();
-      } else if (key === "m") {
-        setQuery("");
-        setMoveIds(targets(id));
+      } else if (key === "p") {
+        pin(targets(id), row.dataset.sidebarThreadPinned !== "true");
         handled();
       }
     };
@@ -397,8 +449,8 @@ export function SidebarInteractions({
   const hiddenCount = [...selected].filter((id) => !shownIds.includes(id)).length;
   const enter = () => setActive(true);
   const launchFromBackground = (action: () => void) => {
-    // These actions create their own focus target. Restoring focus to the
-    // old menu trigger afterward would blur and submit the workspace input.
+    // These actions create their own focus target, and restoring focus to
+    // the old menu trigger afterward would steal it straight back.
     skipBackgroundFocusRestore.current = true;
     action();
   };
@@ -410,7 +462,7 @@ export function SidebarInteractions({
       <SidebarSurface
         ref={root}
         tabIndex={-1}
-        aria-label="Workspace threads"
+        aria-label="Sidebar threads"
         className={cn("bb-workspace-sidebar relative flex h-full min-h-0 flex-col", active && "bb-ws-selecting")}
       >
         {history.pending > 0 && (
@@ -466,12 +518,23 @@ export function SidebarInteractions({
                     className="justify-start"
                     onClick={() => {
                       setActionsOpen(false);
-                      setQuery("");
-                      setMoveIds(targets());
+                      pin(targets(), true);
                     }}
                   >
-                    <Icon name="FolderExport" />
-                    Move to workspace…
+                    <Icon name="Pin" />
+                    Pin to top
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="justify-start"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      pin(targets(), false);
+                    }}
+                  >
+                    <Icon name="PinOff" />
+                    Unpin
                   </Button>
                   <Button
                     size="sm"
@@ -524,7 +587,6 @@ export function SidebarInteractions({
       >
         <ContextMenuLabel>Sidebar</ContextMenuLabel>
         {onNewThread && <ContextMenuItem onSelect={() => launchFromBackground(onNewThread)}><Icon name="MessageSquarePlus" />New thread</ContextMenuItem>}
-        {onNewWorkspace && <ContextMenuItem onSelect={() => launchFromBackground(onNewWorkspace)}><Icon name="FolderPlus" />New workspace</ContextMenuItem>}
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={active ? exit : enter}>
           <Icon name="ListTodo" />{active ? "Exit selection" : "Select threads"}
@@ -556,54 +618,6 @@ export function SidebarInteractions({
               </div>
             ))}
           </dl>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={moveIds !== null}
-        onOpenChange={(open) => {
-          if (!open) setMoveIds(null);
-        }}
-      >
-        <DialogContent>
-          <DialogTitle>
-            Move{" "}
-            {moveIds?.length === 1
-              ? "thread"
-              : `${moveIds?.length ?? 0} threads`}
-          </DialogTitle>
-          <DialogDescription>Choose a workspace.</DialogDescription>
-          <Input
-            autoFocus
-            aria-label="Find workspace"
-            placeholder="Find workspace…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <div className="flex max-h-64 flex-col overflow-y-auto">
-            {sidebar.workspaces
-              .filter((w) => w.name.toLowerCase().includes(query.toLowerCase()))
-              .map((w) => (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  key={w.id}
-                  className="justify-start"
-                  onClick={() => move(w.id)}
-                >
-                  {w.name}
-                </Button>
-              ))}
-            {"unassigned".includes(query.toLowerCase()) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-start"
-                onClick={() => move(null)}
-              >
-                Unassigned
-              </Button>
-            )}
-          </div>
         </DialogContent>
       </Dialog>
     </Selection.Provider>

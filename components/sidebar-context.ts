@@ -10,7 +10,7 @@ import type { experimental_useProviders } from "@get-bb/plugin-sdk/app";
 export type ProviderInfo = ReturnType<
   typeof experimental_useProviders
 >["providers"][number];
-import type { ItemRef, Workspace } from "../lib/types";
+import type { ItemRef } from "../lib/types";
 import type { RowDetails } from "../hooks/useViewState";
 import type { EnvironmentLocation } from "../hooks/useEnvironmentLocations";
 import type { ProjectArtwork } from "../hooks/useProjectArtwork";
@@ -18,7 +18,6 @@ import type { ManualStatus } from "../lib/status";
 
 export interface SidebarContextValue {
   activeThreadId: string | null;
-  workspaces: readonly Workspace[];
   /** Keep idle rows on one line and move metadata into their details. */
   compactRows: boolean;
   /** Which badges the line under a title shows. */
@@ -35,6 +34,7 @@ export interface SidebarContextValue {
   openUrl(url: string): void;
 
   openThread(threadId: string, split: boolean): void;
+  /** Pin to the top of the sidebar, or release it back to its project. */
   setPinned(threadId: string, pinned: boolean): void;
   setRead(threadId: string, read: boolean): void;
   renameThread(threadId: string, title: string): void;
@@ -44,18 +44,22 @@ export interface SidebarContextValue {
   deleteThread(threadId: string): void;
   newThreadIn(projectId: string): void;
 
-  /** Move an item into a workspace, or to Unassigned with null. */
-  moveTo(item: ItemRef, workspaceId: string | null): void;
-  /** Drop the explicit assignment so the item inherits again. */
-  clearItem(item: ItemRef): void;
-  /** Keyboard reorder: -1 moves earlier, 1 later, within the same group. */
+  /** Keyboard reorder: -1 moves earlier, 1 later, within the same section. */
   nudge(item: ItemRef, direction: -1 | 1): void;
+  /** Hand this section's rows back to newest-first ordering. */
+  resetOrder(sectionId: string): void;
 
   isSubtreeExpanded(threadId: string): boolean;
   toggleSubtree(threadId: string): void;
+  /**
+   * Open or close a subtree without reading its current state first. The
+   * arrow keys need this: `toggle` would flip the wrong way whenever a row's
+   * state changed between keystrokes.
+   */
+  setSubtreeExpanded(threadId: string, expanded: boolean): void;
 
-  isProjectCollapsed(workspaceId: string | null, projectId: string): boolean;
-  toggleProject(workspaceId: string | null, projectId: string): void;
+  isSectionCollapsed(sectionId: string): boolean;
+  toggleSection(sectionId: string): void;
 
   /** The bucket the person filed a thread in by hand, or null. */
   manualStatusOf(threadId: string): ManualStatus | null;
@@ -70,10 +74,6 @@ export interface SidebarContextValue {
    */
   provider(providerId: string): ProviderInfo | null;
 
-  createWorkspace(name: string): void;
-  renameWorkspace(workspaceId: string, name: string): void;
-  removeWorkspace(workspaceId: string): void;
-  setSortMode(workspaceId: string, sortMode: "recent" | "manual"): void;
 }
 
 export const SidebarContext = createContext<SidebarContextValue | null>(null);

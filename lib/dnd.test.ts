@@ -6,141 +6,179 @@ import {
   type DragSource,
   type DropZone,
 } from "./dnd";
-import { projectSectionId } from "./regroup";
+import { PINNED_SECTION_ID, projectSectionId } from "./sections";
 import { statusSectionId } from "./status";
 
 const zone = (
   kind: DropZone["kind"],
   refId: string | null,
-  workspaceId: string | null,
-): DropZone => ({ kind, refId, workspaceId });
+  sectionId: string,
+  projectId: string | null = "p1",
+): DropZone => ({ kind, refId, sectionId, projectId });
 
-const thread = (workspaceId: string | null): DragSource => ({
+const thread = (sectionId: string, projectId = "p1"): DragSource => ({
   kind: "thread",
   refId: "t1",
-  workspaceId,
+  sectionId,
+  projectId,
 });
 
-describe("resolveDrop in a real workspace", () => {
-  it("reorders a thread against a sibling in its own section", () => {
-    expect(resolveDrop(thread("ws1"), zone("thread", "t2", "ws1"))).toEqual({
-      action: "reorder",
-      workspaceId: "ws1",
-      anchorRefId: "t2",
-    });
+const p1 = projectSectionId("p1");
+const p2 = projectSectionId("p2");
+const done = statusSectionId("done");
+const backlog = statusSectionId("backlog");
+
+/** Every drop that leaves the order alone and nothing else. */
+const justOrder = { reorder: true, pin: null, bucket: null };
+
+describe("resolveDrop inside one section", () => {
+  it("reorders a thread against a sibling, whatever the section is", () => {
+    for (const section of [p1, done, PINNED_SECTION_ID]) {
+      expect(resolveDrop(thread(section), zone("thread", "t2", section))).toEqual({
+        sectionId: section,
+        anchorRefId: "t2",
+        ...justOrder,
+      });
+    }
   });
 
-  it("moves a thread to a row in another section", () => {
-    expect(resolveDrop(thread("ws1"), zone("thread", "t2", "ws2"))).toEqual({
-      action: "move",
-      workspaceId: "ws2",
-      anchorRefId: "t2",
-    });
-  });
-
-  it("moves a thread into a workspace by its header, or a project heading", () => {
-    expect(resolveDrop(thread("ws1"), zone("workspace", "ws2", "ws2"))).toEqual({
-      action: "move",
-      workspaceId: "ws2",
-      anchorRefId: null,
-    });
-    expect(resolveDrop(thread("ws1"), zone("project", "p1", null))).toEqual({
-      action: "move",
-      workspaceId: null,
-      anchorRefId: null,
-    });
-  });
-
-  it("ignores a hover over the row itself or its own section's header", () => {
-    expect(resolveDrop(thread("ws1"), zone("thread", "t1", "ws1"))).toBeNull();
-    expect(resolveDrop(thread("ws1"), zone("workspace", "ws1", "ws1"))).toBeNull();
-  });
-
-  it("orders a workspace only against another real workspace", () => {
-    const workspace: DragSource = {
-      kind: "workspace",
-      refId: "ws1",
-      workspaceId: "ws1",
-    };
-    expect(resolveDrop(workspace, zone("workspace", "ws2", "ws2"))).toEqual({
-      action: "reorder",
-      workspaceId: null,
-      anchorRefId: "ws2",
-    });
-    expect(resolveDrop(workspace, zone("workspace", "ws1", "ws1"))).toBeNull();
-    expect(resolveDrop(workspace, zone("workspace", null, null))).toBeNull();
-    expect(resolveDrop(workspace, zone("thread", "t2", "ws2"))).toBeNull();
-    expect(
-      resolveDrop(workspace, zone("workspace", statusSectionId("done"), statusSectionId("done"))),
-    ).toBeNull();
+  it("ignores the row itself, and the heading it already sits under", () => {
+    expect(resolveDrop(thread(p1), zone("thread", "t1", p1))).toBeNull();
+    expect(resolveDrop(thread(p1), zone("section", p1, p1))).toBeNull();
+    expect(resolveDrop(thread(p1), zone("project", "p1", p1))).toBeNull();
   });
 });
 
-describe("resolveDrop on a status bucket", () => {
-  const done = statusSectionId("done");
-  const backlog = statusSectionId("backlog");
-
-  it("files a thread into another bucket from a row or the header", () => {
+describe("resolveDrop across sections", () => {
+  it("files a thread into another bucket, from a row or the heading", () => {
     expect(resolveDrop(thread(done), zone("thread", "t2", backlog))).toEqual({
-      action: "status",
+      sectionId: backlog,
+      anchorRefId: "t2",
+      reorder: false,
+      pin: null,
       bucket: "backlog",
     });
-    expect(resolveDrop(thread("ws1"), zone("workspace", done, done))).toEqual({
-      action: "status",
+    expect(resolveDrop(thread(p1), zone("section", done, done))).toEqual({
+      sectionId: done,
+      anchorRefId: null,
+      reorder: false,
+      pin: null,
       bucket: "done",
     });
   });
 
-  it("does nothing within the same bucket, which has no order to change", () => {
-    expect(resolveDrop(thread(done), zone("thread", "t2", done))).toBeNull();
-    expect(resolveDrop(thread(done), zone("workspace", done, done))).toBeNull();
+  it("pins a thread dropped on the Pinned list", () => {
+    expect(
+      resolveDrop(thread(p1), zone("section", PINNED_SECTION_ID, PINNED_SECTION_ID)),
+    ).toEqual({
+      sectionId: PINNED_SECTION_ID,
+      anchorRefId: null,
+      reorder: false,
+      pin: true,
+      bucket: null,
+    });
   });
 
-  it("refuses projects", () => {
-    const project: DragSource = { kind: "project", refId: "p1", workspaceId: "ws1" };
-    expect(resolveDrop(project, zone("workspace", done, done))).toBeNull();
+  it("unpins a thread dragged out of the Pinned list, and files it where it lands", () => {
+    const pinned = thread(PINNED_SECTION_ID);
+    expect(resolveDrop(pinned, zone("section", p1, p1))).toEqual({
+      sectionId: p1,
+      anchorRefId: null,
+      reorder: false,
+      pin: false,
+      bucket: null,
+    });
+    expect(resolveDrop(pinned, zone("thread", "t2", done))).toEqual({
+      sectionId: done,
+      anchorRefId: "t2",
+      reorder: false,
+      pin: false,
+      bucket: "done",
+    });
+  });
+
+  // The way back out of Done, Backlog and Canceled: the thread goes home to
+  // its project and stops being parked.
+  it("reopens a parked thread dropped back into its own project", () => {
+    expect(resolveDrop(thread(done), zone("section", p1, p1))).toEqual({
+      sectionId: p1,
+      anchorRefId: null,
+      reorder: false,
+      pin: null,
+      bucket: "in-progress",
+    });
+  });
+
+  it("never moves a thread into another project: bb owns that", () => {
+    expect(resolveDrop(thread(p1), zone("thread", "t2", p2))).toBeNull();
+    expect(resolveDrop(thread(p1), zone("section", p2, p2))).toBeNull();
+    expect(resolveDrop(thread(done), zone("project", "p2", p2))).toBeNull();
   });
 });
 
-describe("resolveDrop on a project group", () => {
-  it("never accepts a thread: a drag cannot change its project", () => {
-    const p1 = projectSectionId("p1");
-    const p2 = projectSectionId("p2");
-    expect(resolveDrop(thread(p1), zone("thread", "t2", p2))).toBeNull();
-    expect(resolveDrop(thread(p1), zone("workspace", p1, p1))).toBeNull();
+describe("resolveDrop on a project heading", () => {
+  const project: DragSource = { kind: "project", refId: "p1", sectionId: p1 };
+
+  it("orders one project against another", () => {
+    expect(resolveDrop(project, zone("project", "p2", p2))).toEqual({
+      sectionId: p2,
+      anchorRefId: "p2",
+      ...justOrder,
+    });
+  });
+
+  it("ignores itself, a thread row, and a status bucket", () => {
+    expect(resolveDrop(project, zone("project", "p1", p1))).toBeNull();
+    expect(resolveDrop(project, zone("thread", "t2", p2))).toBeNull();
+    expect(resolveDrop(project, zone("section", done, done))).toBeNull();
   });
 });
 
 describe("hoverKeys", () => {
   it("lights nothing for a reorder, the list animation already says it", () => {
     expect(
-      hoverKeys({ action: "reorder", workspaceId: "ws1", anchorRefId: "t2" }, zone("thread", "t2", "ws1"), "before"),
+      hoverKeys(
+        { sectionId: p1, anchorRefId: "t2", ...justOrder },
+        zone("thread", "t2", p1),
+        "before",
+      ),
     ).toEqual({ section: null, line: null });
   });
 
-  it("rings the section and lines the row for a move", () => {
+  it("rings the section and lines the row for a filing", () => {
     expect(
-      hoverKeys({ action: "move", workspaceId: "ws2", anchorRefId: "t2" }, zone("thread", "t2", "ws2"), "after"),
-    ).toEqual({ section: "section:ws2", line: "thread:t2:after" });
+      hoverKeys(
+        { sectionId: done, anchorRefId: "t2", reorder: false, pin: null, bucket: "done" },
+        zone("thread", "t2", done),
+        "after",
+      ),
+    ).toEqual({ section: `section:${done}`, line: "thread:t2:after" });
     expect(
-      hoverKeys({ action: "move", workspaceId: null, anchorRefId: null }, zone("workspace", null, null), "after"),
-    ).toEqual({ section: "section:__unassigned__", line: null });
-  });
-
-  it("rings the bucket for a filing", () => {
-    const done = statusSectionId("done");
-    expect(
-      hoverKeys({ action: "status", bucket: "done" }, zone("workspace", done, done), "after"),
-    ).toEqual({ section: `section:${done}`, line: null });
+      hoverKeys(
+        {
+          sectionId: PINNED_SECTION_ID,
+          anchorRefId: null,
+          reorder: false,
+          pin: true,
+          bucket: null,
+        },
+        zone("section", PINNED_SECTION_ID, PINNED_SECTION_ID),
+        "after",
+      ),
+    ).toEqual({ section: "section:pinned", line: null });
   });
 });
 
 describe("sortableId", () => {
-  it("is unique per list, including a project shown in two sections", () => {
-    expect(sortableId(zone("thread", "t1", "ws1"))).toBe("thread:t1");
-    expect(sortableId(zone("project", "p1", "ws1"))).toBe("project:ws1:p1");
-    expect(sortableId(zone("project", "p1", null))).toBe("project:__unassigned__:p1");
-    expect(sortableId(zone("workspace", "ws1", "ws1"))).toBe("workspace:ws1");
-    expect(sortableId(zone("workspace", null, null))).toBe("workspace:__unassigned__");
+  it("is unique per list, including one thread across two groupings", () => {
+    expect(sortableId(zone("thread", "t1", p1))).toBe("thread:project:p1:t1");
+    expect(sortableId(zone("thread", "t1", done))).toBe("thread:status:done:t1");
+    expect(sortableId(zone("project", "p1", p1))).toBe("project:p1");
+    expect(sortableId(zone("section", done, done))).toBe("section:status:done");
+    // The inert heading node a status or Pinned section registers.
+    expect(sortableId(zone("project", null, done))).toBe("project:status:done");
+    expect(sortableId(zone("project", null, PINNED_SECTION_ID))).toBe(
+      "project:pinned",
+    );
   });
 });

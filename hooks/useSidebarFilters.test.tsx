@@ -20,21 +20,18 @@ it("migrates a single-project preference and keeps clearing durable", () => {
   expect(second.result.current.projectIds).toEqual([]);
 });
 
-it("persists multiple projects and resets them when switching workspace", () => {
+it("persists multiple projects, de-duplicated", () => {
   const first = renderHook(useSidebarFilters);
-  act(() => first.result.current.setWorkspace("ws1"));
   act(() => first.result.current.setProjects(["p1", "p2", "p1"]));
   first.unmount();
   const second = renderHook(useSidebarFilters);
-  expect(second.result.current).toMatchObject({ workspaceId: "ws1", projectIds: ["p1", "p2"] });
-  act(() => second.result.current.setWorkspace("ws2"));
-  expect(second.result.current).toMatchObject({ workspaceId: "ws2", projectIds: [] });
+  expect(second.result.current.projectIds).toEqual(["p1", "p2"]);
 });
 
-it.each(["invalid json", '{"workspaceId":5,"projectIds":["p1"]}', '{"workspaceId":null,"projectIds":[null]}'])("recovers from invalid persisted filters: %s", raw => {
+it.each(["invalid json", '{"projectIds":"p1"}', '{"projectIds":[null]}'])("recovers from invalid persisted filters: %s", raw => {
   window.localStorage.setItem(SIDEBAR_FILTERS_KEY, raw);
   const { result } = renderHook(useSidebarFilters);
-  expect(result.current).toMatchObject({ workspaceId: null, projectIds: [] });
+  expect(result.current.projectIds).toEqual([]);
 });
 
 it("keeps filtering usable when storage is unavailable", () => {

@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { resolveTree } from "./resolve";
-import type { Assignment, Lifecycle, Workspace } from "./types";
-
-const workspaces: Workspace[] = [
-  { id: "ws1", name: "One", sortIndex: 0, sortMode: "recent", createdAt: 1 },
-  { id: "ws2", name: "Two", sortIndex: 1, sortMode: "recent", createdAt: 1 },
-];
+import { resolveTree, type ProjectGroup, type ResolvedTree } from "./resolve";
+import { buildSections, visibleThreadIds } from "./sections";
+import { statusBucket } from "./status";
+import type { Lifecycle, OrderEntry } from "./types";
 
 const projects = [
   { id: "p1", name: "Alpha", isPersonal: false },
@@ -49,7 +46,7 @@ function thread(
 
 function run(
   threads: PluginSidebarThread[],
-  assignments: Assignment[],
+  order: OrderEntry[] = [],
   showArchived = false,
   lifecycle: Lifecycle[] = [],
   now = 1000,
@@ -58,16 +55,33 @@ function run(
     status: "ready",
     projects,
     threads,
-    workspaces,
-    assignments,
+    order,
     lifecycle,
     showArchived,
     now,
   });
 }
 
-function section(tree: ReturnType<typeof run>, workspaceId: string | null) {
-  return tree.sections.find((candidate) => candidate.workspaceId === workspaceId)!;
+function group(tree: ResolvedTree, projectId: string): ProjectGroup {
+  return tree.projects.find((candidate) => candidate.projectId === projectId)!;
+}
+
+function ids(tree: ResolvedTree, projectId: string): string[] {
+  return group(tree, projectId).roots.map((root) => root.thread.id);
+}
+
+/** The sections the sidebar would draw, grouped however the caller asks. */
+function sectionsOf(
+  tree: ResolvedTree,
+  groupBy: "project" | "status" = "project",
+  projectIds: string[] = [],
+) {
+  return buildSections({
+    tree,
+    groupBy,
+    projectIds,
+    bucketOf: () => statusBucket(null, undefined),
+  });
 }
 
 describe("resolveTree", () => {
@@ -76,138 +90,182 @@ describe("resolveTree", () => {
       status: "loading",
       projects,
       threads: [thread({ id: "t1", projectId: "p1" })],
-      workspaces,
-      assignments: [],
+      order: [],
       lifecycle: [],
       showArchived: false,
     });
-    expect(tree.sections).toEqual([]);
+    expect(tree.projects).toEqual([]);
     // Orphans must never be derived from a snapshot that is not ready.
-    expect(tree.unknownAssignments).toEqual([]);
+    expect(tree.unknownOrder).toEqual([]);
   });
 
-  it("lets a thread inherit its project's workspace", () => {
-    const tree = run(
-      [thread({ id: "t1", projectId: "p1" })],
-      [{ kind: "project", refId: "p1", workspaceId: "ws1", sortIndex: 0 }],
-    );
-    expect(section(tree, "ws1").groups[0]!.roots[0]!.thread.id).toBe("t1");
-    expect(section(tree, null).groups.map((g) => g.projectId)).toEqual(["p2"]);
-  });
-
-  it("puts an overridden thread in the other workspace as a foreign group", () => {
-    const tree = run(
-      [thread({ id: "t1", projectId: "p1" }), thread({ id: "t2", projectId: "p1" })],
-      [
-        { kind: "project", refId: "p1", workspaceId: "ws1", sortIndex: 0 },
-        { kind: "thread", refId: "t2", workspaceId: "ws2", sortIndex: 1 },
-      ],
-    );
-    expect(section(tree, "ws1").groups[0]!.roots.map((r) => r.thread.id)).toEqual([
-      "t1",
+  it("files every thread under its own project, projects A to Z", () => {
+    const tree = run([
+      thread({ id: "t1", projectId: "p2" }),
+      thread({ id: "t2", projectId: "p1" }),
     ]);
-    const foreign = section(tree, "ws2").groups[0]!;
-    expect(foreign.isForeign).toBe(true);
-    expect(foreign.name).toBe("Alpha");
-    expect(foreign.roots[0]!.thread.id).toBe("t2");
+    expect(tree.projects.map((entry) => entry.projectId)).toEqual(["p1", "p2"]);
+    expect(ids(tree, "p1")).toEqual(["t2"]);
+    expect(ids(tree, "p2")).toEqual(["t1"]);
   });
 
-  // The whole reason assignment has three states rather than two.
-  it("stops at an explicit detach instead of inheriting the project", () => {
+  it("puts projects in the order somebody dragged them into", () => {
     const tree = run(
       [thread({ id: "t1", projectId: "p1" })],
       [
-        { kind: "project", refId: "p1", workspaceId: "ws1", sortIndex: 0 },
-        { kind: "thread", refId: "t1", workspaceId: null, sortIndex: 1 },
+        { kind: "project", refId: "p2", sortIndex: 0 },
+        { kind: "project", refId: "p1", sortIndex: 1 },
       ],
     );
-    expect(section(tree, "ws1").threadCount).toBe(0);
-    const unassigned = section(tree, null);
-    expect(unassigned.groups.some((g) => g.roots.some((r) => r.thread.id === "t1"))).toBe(
-      true,
-    );
+    expect(tree.projects.map((entry) => entry.projectId)).toEqual(["p2", "p1"]);
   });
 
   it("nests children and counts descendants on the root", () => {
-    const tree = run(
-      [
-        thread({ id: "root", projectId: "p1" }),
-        thread({ id: "kid", projectId: "p1", parentThreadId: "root", createdAt: 2 }),
-        thread({ id: "grandkid", projectId: "p1", parentThreadId: "kid", createdAt: 3 }),
-      ],
-      [],
-    );
-    const root = section(tree, null).groups[0]!.roots[0]!;
+    const tree = run([
+      thread({ id: "root", projectId: "p1" }),
+      thread({ id: "kid", projectId: "p1", parentThreadId: "root", createdAt: 2 }),
+      thread({
+        id: "grandkid",
+        projectId: "p1",
+        parentThreadId: "kid",
+        createdAt: 3,
+      }),
+    ]);
+    const root = group(tree, "p1").roots[0]!;
     expect(root.thread.id).toBe("root");
     expect(root.descendantCount).toBe(2);
     expect(root.children[0]!.children[0]!.thread.id).toBe("grandkid");
   });
 
-  it("promotes a child whose parent is filtered out rather than dropping it", () => {
+  it("nests to any depth and rolls flags up from the deepest node", () => {
     const tree = run(
-      [
-        thread({ id: "root", projectId: "p1", isArchived: true }),
-        thread({ id: "kid", projectId: "p1", parentThreadId: "root" }),
-      ],
-      [],
+      Array.from({ length: 8 }, (_, i) =>
+        thread({
+          id: `t${i}`,
+          projectId: "p1",
+          parentThreadId: i === 0 ? null : `t${i - 1}`,
+          createdAt: i + 1,
+          // Only the deepest node carries them: the rollup has to survive
+          // seven levels, not one.
+          isUnread: i === 7,
+          hasPendingInteraction: i === 7,
+        }),
+      ),
     );
-    const roots = section(tree, null).groups[0]!.roots;
-    expect(roots.map((r) => r.thread.id)).toEqual(["kid"]);
+    const root = group(tree, "p1").roots[0]!;
+    let node = root;
+    for (let depth = 0; depth < 8; depth += 1) {
+      expect(node.depth).toBe(depth);
+      if (depth < 7) node = node.children[0]!;
+    }
+    expect(node.thread.id).toBe("t7");
+    expect(root.descendantCount).toBe(7);
+    expect(root.hasUnreadDescendant).toBe(true);
+    expect(root.hasPendingDescendant).toBe(true);
+  });
+
+  it("keeps every row of a forty-deep chain", () => {
+    // Fails before MAX_PARENT_WALK became MAX_DESCENT only past depth 32, so
+    // 40 is the shortest chain that proves the ceiling is gone in spirit;
+    // this is the regression guard for re-introducing one.
+    const depth = 40;
+    const tree = run(
+      Array.from({ length: depth }, (_, i) =>
+        thread({
+          id: `t${i}`,
+          projectId: "p1",
+          parentThreadId: i === 0 ? null : `t${i - 1}`,
+          createdAt: i + 1,
+        }),
+      ),
+    );
+    const alpha = group(tree, "p1");
+    const root = alpha.roots[0]!;
+    let node = root;
+    while (node.children.length > 0) node = node.children[0]!;
+    expect(node.depth).toBe(depth - 1);
+    expect(node.thread.id).toBe(`t${depth - 1}`);
+    expect(root.descendantCount).toBe(depth - 1);
+    expect(alpha.threadCount).toBe(depth);
+  });
+
+  it("stops the visible walk at a collapsed node at any depth", () => {
+    const tree = run(
+      Array.from({ length: 8 }, (_, i) =>
+        thread({
+          id: `t${i}`,
+          projectId: "p1",
+          parentThreadId: i === 0 ? null : `t${i - 1}`,
+          createdAt: i + 1,
+        }),
+      ),
+    );
+    const visible = visibleThreadIds(
+      sectionsOf(tree),
+      (threadId) => threadId !== "t4",
+      () => true,
+    );
+    expect(visible).toEqual(["t0", "t1", "t2", "t3", "t4"]);
+  });
+
+  it("promotes a child whose parent is filtered out rather than dropping it", () => {
+    const tree = run([
+      thread({ id: "root", projectId: "p1", isArchived: true }),
+      thread({ id: "kid", projectId: "p1", parentThreadId: "root" }),
+    ]);
+    expect(ids(tree, "p1")).toEqual(["kid"]);
   });
 
   it("survives a parent cycle", () => {
-    const tree = run(
-      [
-        thread({ id: "a", projectId: "p1", parentThreadId: "b" }),
-        thread({ id: "b", projectId: "p1", parentThreadId: "a" }),
-      ],
-      [],
-    );
+    const tree = run([
+      thread({ id: "a", projectId: "p1", parentThreadId: "b" }),
+      thread({ id: "b", projectId: "p1", parentThreadId: "a" }),
+    ]);
     // Neither is a root by the parent rule, so neither renders — but the walk
     // must terminate rather than blowing the stack.
-    expect(tree.sections.length).toBeGreaterThan(0);
+    expect(tree.projects.length).toBeGreaterThan(0);
   });
 
-  it("reports an assignment for a vanished thread without rendering it", () => {
+  it("reports an order row for a vanished thread without rendering it", () => {
     const tree = run(
       [thread({ id: "t1", projectId: "p1" })],
-      [{ kind: "thread", refId: "gone", workspaceId: "ws1", sortIndex: 0 }],
+      [{ kind: "thread", refId: "gone", sortIndex: 0 }],
     );
-    expect(tree.unknownAssignments).toEqual([{ kind: "thread", refId: "gone" }]);
-    expect(section(tree, "ws1").threadCount).toBe(0);
+    expect(tree.unknownOrder).toEqual([{ kind: "thread", refId: "gone" }]);
+    expect(group(tree, "p1").threadCount).toBe(1);
   });
 
-  it("ignores an assignment pointing at a deleted workspace", () => {
-    const tree = run(
-      [thread({ id: "t1", projectId: "p1" })],
-      [{ kind: "project", refId: "p1", workspaceId: "ws-gone", sortIndex: 0 }],
-    );
-    expect(section(tree, null).groups.map((g) => g.projectId)).toContain("p1");
+  it("keeps a thread whose project the host stopped reporting", () => {
+    const tree = run([thread({ id: "t1", projectId: "p-gone" })]);
+    const orphaned = group(tree, "p-gone");
+    expect(orphaned.name).toBe("Unknown project");
+    expect(orphaned.roots.map((root) => root.thread.id)).toEqual(["t1"]);
   });
 
-  it("sorts pinned first, then newest created, under the default mode", () => {
-    const tree = run(
-      [
-        thread({ id: "old", projectId: "p1", createdAt: 1 }),
-        thread({ id: "new", projectId: "p1", createdAt: 9 }),
-        thread({ id: "pinned", projectId: "p1", createdAt: 0, isPinned: true }),
-      ],
-      [],
-    );
-    expect(
-      section(tree, null).groups[0]!.roots.map((r) => r.thread.id),
-    ).toEqual(["pinned", "new", "old"]);
+  it("sorts newest created first when nobody has dragged anything", () => {
+    const tree = run([
+      thread({ id: "old", projectId: "p1", createdAt: 1 }),
+      thread({ id: "new", projectId: "p1", createdAt: 9 }),
+    ]);
+    expect(ids(tree, "p1")).toEqual(["new", "old"]);
+    expect(group(tree, "p1").manual).toBe(false);
   });
 
-  it("keeps a thread with a manual status in its workspace", () => {
-    // Filing is a grouping concern (see regroup); membership is unchanged.
-    const tree = run(
-      [thread({ id: "t1", projectId: "p1" })],
-      [],
-      false,
-      [{ threadId: "t1", status: "done", snoozedUntil: null }],
-    );
-    expect(section(tree, null).threadCount).toBe(1);
+  it("lifts a pinned thread out of its project and into its own list", () => {
+    const tree = run([
+      thread({ id: "plain", projectId: "p1", createdAt: 9 }),
+      thread({ id: "pinned", projectId: "p1", createdAt: 0, isPinned: true }),
+    ]);
+    expect(tree.pinned.map((node) => node.thread.id)).toEqual(["pinned"]);
+    expect(ids(tree, "p1")).toEqual(["plain"]);
+  });
+
+  it("keeps a thread with a manual status in its project", () => {
+    // Filing is a grouping concern (see lib/sections); membership is unchanged.
+    const tree = run([thread({ id: "t1", projectId: "p1" })], [], false, [
+      { threadId: "t1", status: "done", snoozedUntil: null },
+    ]);
+    expect(group(tree, "p1").threadCount).toBe(1);
   });
 
   it("parks a snoozed thread in the dock until its time passes", () => {
@@ -218,9 +276,9 @@ describe("resolveTree", () => {
       [{ threadId: "t1", status: null, snoozedUntil: 5000 }],
       1000,
     );
-    expect(asleep.sections.every((s) => s.threadCount === 0)).toBe(true);
+    expect(asleep.projects.every((entry) => entry.threadCount === 0)).toBe(true);
     expect(asleep.snoozed).toEqual([
-      { thread: expect.objectContaining({ id: "t1" }), until: 5000, workspaceId: null },
+      { thread: expect.objectContaining({ id: "t1" }), until: 5000 },
     ]);
     expect(asleep.wokenEarly).toEqual([]);
 
@@ -231,7 +289,7 @@ describe("resolveTree", () => {
       [{ threadId: "t1", status: null, snoozedUntil: 5000 }],
       9000,
     );
-    expect(section(awake, null).threadCount).toBe(1);
+    expect(group(awake, "p1").threadCount).toBe(1);
     expect(awake.snoozed).toEqual([]);
   });
 
@@ -241,7 +299,15 @@ describe("resolveTree", () => {
       { indicator: "unread-error" },
       { indicator: "waiting-for-input" },
       { indicator: "runtime" },
-      { activity: { workflows: 1, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 } },
+      {
+        activity: {
+          workflows: 1,
+          backgroundAgents: 0,
+          backgroundCommands: 0,
+          planMode: 0,
+          goals: 0,
+        },
+      },
     ];
     for (const overrides of cases) {
       const tree = run(
@@ -251,14 +317,21 @@ describe("resolveTree", () => {
         [{ threadId: "t1", status: null, snoozedUntil: 5000 }],
         1000,
       );
-      expect(section(tree, null).threadCount).toBe(1);
+      expect(group(tree, "p1").threadCount).toBe(1);
       expect(tree.snoozed).toEqual([]);
       expect(tree.wokenEarly).toEqual(["t1"]);
     }
     // Finished quietly: stays asleep. Waking on "unread-success" would undo
     // the snooze the moment an agent finished the very work it was parked for.
     const quiet = run(
-      [thread({ id: "t1", projectId: "p1", indicator: "unread-success", isUnread: true })],
+      [
+        thread({
+          id: "t1",
+          projectId: "p1",
+          indicator: "unread-success",
+          isUnread: true,
+        }),
+      ],
       [],
       false,
       [{ threadId: "t1", status: null, snoozedUntil: 5000 }],
@@ -267,10 +340,10 @@ describe("resolveTree", () => {
     expect(quiet.snoozed).toHaveLength(1);
   });
 
-  it("orders snoozed threads soonest first and keeps their workspace", () => {
+  it("orders snoozed threads soonest first", () => {
     const tree = run(
       [thread({ id: "a", projectId: "p1" }), thread({ id: "b", projectId: "p2" })],
-      [{ kind: "project", refId: "p1", workspaceId: "ws1", sortIndex: 0 }],
+      [],
       false,
       [
         { threadId: "a", status: null, snoozedUntil: 9000 },
@@ -278,35 +351,125 @@ describe("resolveTree", () => {
       ],
       1000,
     );
-    expect(tree.snoozed.map((entry) => [entry.thread.id, entry.workspaceId])).toEqual([
-      ["b", null],
-      ["a", "ws1"],
-    ]);
+    expect(tree.snoozed.map((entry) => entry.thread.id)).toEqual(["b", "a"]);
   });
 
-  it("honours manual order, with never-dragged threads after the ordered ones", () => {
-    const manual: Workspace[] = [
-      { id: "ws1", name: "One", sortIndex: 0, sortMode: "manual", createdAt: 1 },
-    ];
-    const tree = resolveTree({
-      status: "ready",
-      projects,
-      threads: [
+  it("honours a hand-picked order, with never-dragged threads above it", () => {
+    // A thread nobody has placed is a new one, and a new thread belongs at
+    // the top of the list rather than under everything already arranged.
+    const tree = run(
+      [
         thread({ id: "a", projectId: "p1", createdAt: 1 }),
         thread({ id: "b", projectId: "p1", createdAt: 9 }),
         thread({ id: "never", projectId: "p1", createdAt: 5 }),
       ],
-      lifecycle: [],
-      workspaces: manual,
-      assignments: [
-        { kind: "project", refId: "p1", workspaceId: "ws1", sortIndex: 0 },
-        { kind: "thread", refId: "b", workspaceId: "ws1", sortIndex: 1 },
-        { kind: "thread", refId: "a", workspaceId: "ws1", sortIndex: 2 },
+      [
+        { kind: "thread", refId: "b", sortIndex: 0 },
+        { kind: "thread", refId: "a", sortIndex: 1 },
       ],
-      showArchived: false,
+    );
+    expect(ids(tree, "p1")).toEqual(["never", "b", "a"]);
+    expect(group(tree, "p1").manual).toBe(true);
+  });
+});
+
+describe("buildSections", () => {
+  const bucketed = (byId: Record<string, "done" | "backlog">) => (node: {
+    thread: { id: string };
+  }) => byId[node.thread.id] ?? "in-progress";
+
+  it("leads with Pinned, then a section per project", () => {
+    const tree = run([
+      thread({ id: "t1", projectId: "p1" }),
+      thread({ id: "t2", projectId: "p2", isPinned: true }),
+    ]);
+    const sections = sectionsOf(tree);
+    expect(sections.map((section) => section.id)).toEqual([
+      "pinned",
+      "project:p1",
+      "project:p2",
+    ]);
+    // A project heading names the project, so its rows must not repeat it;
+    // the Pinned list holds threads from anywhere, so its rows must.
+    expect(sections[0]!.showProject).toBe(true);
+    expect(sections[1]!.showProject).toBe(false);
+  });
+
+  it("hides Pinned when nothing is pinned, unless a drag is looking for it", () => {
+    const tree = run([thread({ id: "t1", projectId: "p1" })]);
+    expect(sectionsOf(tree).map((section) => section.id)).not.toContain("pinned");
+    const dragging = buildSections({
+      tree,
+      groupBy: "project",
+      projectIds: [],
+      dragging: true,
+      bucketOf: () => "in-progress",
     });
-    expect(
-      tree.sections[0]!.groups[0]!.roots.map((r) => r.thread.id),
-    ).toEqual(["b", "a", "never"]);
+    expect(dragging[0]!.id).toBe("pinned");
+  });
+
+  it("files finished work under its own heading, below the projects", () => {
+    const tree = run([
+      thread({ id: "live", projectId: "p1" }),
+      thread({ id: "shipped", projectId: "p1" }),
+    ]);
+    const sections = buildSections({
+      tree,
+      groupBy: "project",
+      projectIds: [],
+      bucketOf: bucketed({ shipped: "done" }),
+    });
+    expect(sections.map((section) => section.id)).toEqual([
+      "project:p1",
+      "project:p2",
+      "status:done",
+    ]);
+    expect(sections[0]!.roots.map((root) => root.thread.id)).toEqual(["live"]);
+    expect(sections[2]!.roots.map((root) => root.thread.id)).toEqual(["shipped"]);
+  });
+
+  it("shows all five buckets when grouping by status, empty ones included", () => {
+    const tree = run([thread({ id: "t1", projectId: "p1" })]);
+    expect(sectionsOf(tree, "status").map((section) => section.name)).toEqual([
+      "Done",
+      "In review",
+      "In progress",
+      "Backlog",
+      "Canceled",
+    ]);
+  });
+
+  it("lifts threads waiting on a person, but never above a hand-placed row", () => {
+    const tree = run(
+      [
+        thread({ id: "placed", projectId: "p1", createdAt: 9 }),
+        thread({ id: "quiet", projectId: "p2", createdAt: 5 }),
+        thread({
+          id: "asking",
+          projectId: "p2",
+          createdAt: 1,
+          hasPendingInteraction: true,
+        }),
+      ],
+      [{ kind: "thread", refId: "placed", sortIndex: 0 }],
+    );
+    const bucket = sectionsOf(tree, "status").find(
+      (section) => section.id === "status:in-progress",
+    )!;
+    expect(bucket.roots.map((root) => root.thread.id)).toEqual([
+      "asking",
+      "quiet",
+      "placed",
+    ]);
+  });
+
+  it("narrows every grouping to the projects the filter names", () => {
+    const tree = run([
+      thread({ id: "t1", projectId: "p1" }),
+      thread({ id: "t2", projectId: "p2", isPinned: true }),
+    ]);
+    expect(sectionsOf(tree, "project", ["p1"]).map((section) => section.id)).toEqual([
+      "project:p1",
+    ]);
   });
 });

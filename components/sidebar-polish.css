@@ -21,15 +21,15 @@
 .ws-tone-danger { color: var(--ws-danger, #eb5757); }
 .ws-tone-working { color: var(--ws-working, #f2c94c); }
 .bb-ws-row[data-selected="true"] { background: var(--accent); box-shadow: inset 0 0 0 1px var(--border); }
+.bb-ws-subtree { margin: 0; padding: 0; list-style: none; }
 .bb-ws-subtree > li { position: relative; }
 .bb-ws-subtree > li::before { content: ""; position: absolute; pointer-events: none; top: 0; bottom: 0; left: var(--ws-tree-left); border-left: 1px solid var(--ws-line); }
-.bb-ws-subtree > li:last-child::before { bottom: auto; height: 17px; width: 8px; border-bottom: 1px solid var(--ws-line); border-bottom-left-radius: 4px; }
+.bb-ws-subtree > li:last-child::before { bottom: auto; height: 17px; width: var(--ws-tree-elbow, 8px); border-bottom: 1px solid var(--ws-line); border-bottom-left-radius: 4px; }
 .bb-ws-subtree > li > .group\/selection-row { position: relative; }
 .bb-ws-project-threads { position: relative; margin-left: 10px; }
 .bb-ws-project-threads::before { content:""; position:absolute; left:0; top:0; bottom:8px; border-left:1px solid var(--ws-line); pointer-events:none; }
 .bb-ws-section-tree { position:relative; }
 .bb-ws-section-tree::before { content:""; position:absolute; left:4px; top:0; bottom:10px; border-left:1px solid var(--ws-line); pointer-events:none; }
-.bb-ws-subtree .bb-ws-subtree { --ws-tree-left: inherit; }
 .bb-ws-selecting .bb-ws-subtree > li::before { translate: var(--ws-selection-gutter) 0; }
 .bb-ws-selecting .bb-ws-project-threads::before { translate:var(--ws-selection-gutter) 0; }
 .bb-ws-selecting .bb-ws-section-tree::before { translate:var(--ws-selection-gutter) 0; }
@@ -56,3 +56,26 @@
 /* The trailing word yields to the hover actions, exactly as a thread row's status does. */
 .bb-ws-dock-row:hover .bb-ws-dock-trailing, .bb-ws-dock-row:focus-within .bb-ws-dock-trailing { visibility: hidden; }
 @media (pointer: coarse) { .bb-ws-dock-trailing { display: none; } }
+
+/* A row leaving the list — marked done, snoozed, filed away. It holds its
+   slot while it fades, and only then do the rows below close the gap, so
+   what the eye follows is the thread leaving rather than a frame dropping. */
+@keyframes bb-ws-row-leave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(10px) scale(0.97); }
+}
+.bb-ws-row-leaving {
+  pointer-events: none;
+  transform-origin: left center;
+  animation: bb-ws-row-leave 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+/* Windowed rows are placed by transform, so closing the gap is a transform
+   change. The transition is only on while the list is actually settling: left
+   standing it would also animate a section above collapsing, which moves
+   every row below it the height of that section at once. */
+.bb-ws-rows-settling > li { transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-ws-row-leaving { animation-duration: 1ms; }
+  .bb-ws-rows-settling > li { transition: none; }
+}

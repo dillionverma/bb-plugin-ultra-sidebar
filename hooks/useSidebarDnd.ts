@@ -81,8 +81,8 @@ export type SidebarDndContextProps = Pick<
 
 export function useSidebarDnd(options: {
   onDrop(outcome: DropOutcome): void;
-  isCollapsed(workspaceId: string | null): boolean;
-  onSpringLoad(workspaceId: string | null): void;
+  isCollapsed(sectionId: string): boolean;
+  onSpringLoad(sectionId: string): void;
 }): { state: DragState; contextProps: SidebarDndContextProps } {
   const [state, setState] = useState<DragState>(IDLE_DRAG);
 
@@ -140,8 +140,8 @@ export function useSidebarDnd(options: {
       // that is only a header can still take a precise placement.
       const { zone } = target;
       if (
-        zone.kind === "workspace" &&
-        optionsRef.current.isCollapsed(zone.workspaceId)
+        zone.kind !== "thread" &&
+        optionsRef.current.isCollapsed(zone.sectionId)
       ) {
         const key = String(event.over!.id);
         if (springRef.current?.key !== key) {
@@ -150,7 +150,7 @@ export function useSidebarDnd(options: {
             key,
             timer: window.setTimeout(() => {
               springRef.current = null;
-              optionsRef.current.onSpringLoad(zone.workspaceId);
+              optionsRef.current.onSpringLoad(zone.sectionId);
             }, SPRING_LOAD_MS),
           };
         }
@@ -239,22 +239,23 @@ function sideOf(active: Active, over: Over): DropSide {
 const RANK: Record<DndData["zone"]["kind"], number> = {
   thread: 0,
   project: 1,
-  workspace: 2,
+  section: 2,
 };
 
 /**
  * Rows over sections: the pointer is usually inside both a row and the
- * section around it, and the row is the answer. A workspace drag sees only
- * workspace headers, measured by centre so tall sections still sort cleanly.
+ * section around it, and the row is the answer. A project-heading drag sees
+ * only the other headings, measured by centre so tall sections still sort
+ * cleanly.
  */
 const collisionDetection: CollisionDetection = (args) => {
-  if (sourceOf(dataOf(args.active))?.kind === "workspace") {
+  if (sourceOf(dataOf(args.active))?.kind === "project") {
     return closestCenter({
       ...args,
       droppableContainers: args.droppableContainers.filter(
         (container) =>
           (container.data.current as DndData | undefined)?.zone.kind ===
-          "workspace",
+          "project",
       ),
     });
   }

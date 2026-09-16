@@ -24,9 +24,8 @@ function HandoffTip({ children, text }: { children: ReactElement; text: string }
   </Tooltip>;
 }
 
-export function ThreadHandoff({ threadId, workspaceId, sourceProviderId, currentModel, onOpenChange }: {
+export function ThreadHandoff({ threadId, sourceProviderId, currentModel, onOpenChange }: {
   threadId: string;
-  workspaceId: string | null;
   sourceProviderId: string;
   currentModel: string | null;
   onOpenChange(open: boolean): void;
@@ -96,7 +95,7 @@ export function ThreadHandoff({ threadId, workspaceId, sourceProviderId, current
     setPending(true);
     setHandoffError(null);
     try {
-      const next = await rpc.call("threads.handoff", { threadId, workspaceId, ...(target ? { target } : {}) });
+      const next = await rpc.call("threads.handoff", { threadId, ...(target ? { target } : {}) });
       if (target) recordHandoffModel(target.providerId, target.model);
       changeOpen(false);
       nav.toThread(next.threadId);
@@ -182,7 +181,7 @@ export function ThreadHandoff({ threadId, workspaceId, sourceProviderId, current
                 </Button>
               </HandoffTip>
             )}
-            <HandoffTip text="Choose a model to open a fresh thread in the same workspace. Your original thread stays available. Models you use most appear first.">
+            <HandoffTip text="Choose a model to open a fresh thread on the same checkout. Your original thread stays available. Models you use most appear first.">
               <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="How handoff works">
                 <HugeiconsIcon icon={InformationCircleIcon} aria-hidden />
               </Button>
