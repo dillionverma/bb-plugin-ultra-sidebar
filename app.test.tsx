@@ -1437,3 +1437,29 @@ describe("sidebar workspace and project filters", () => {
     expect(slot.getByRole("button", { name: "Filter by project: All projects" })).toBeTruthy();
   });
 });
+
+describe("phone row actions", () => {
+  it.each([false, true])("keeps the action cluster on the active thread only, compact=%s", async compact => {
+    const slot = await mount({
+      compact,
+      mobile: true,
+      activeThreadId: "t1",
+      threads: [thread({ id: "t1", projectId: "p1" }), thread({ id: "t2", projectId: "p1" })],
+    });
+    await slot.findByText("Client work");
+    const clusterClassOf = (threadId: string) => {
+      const cluster = document
+        .querySelector(`[data-sidebar-thread-id="${threadId}"]`)
+        ?.querySelector("[data-thread-row-actions]");
+      if (!(cluster instanceof HTMLElement)) throw new Error(`no action cluster for ${threadId}`);
+      return cluster.className;
+    };
+    const phoneOnly = compact ? "max-md:pointer-coarse:opacity-100" : "max-md:pointer-coarse:flex";
+    const tabletAndUp = compact ? " md:pointer-coarse:opacity-100" : " md:pointer-coarse:flex";
+
+    expect(clusterClassOf("t1")).toContain(phoneOnly);
+    expect(clusterClassOf("t1")).toContain(tabletAndUp);
+    expect(clusterClassOf("t2")).not.toContain(phoneOnly);
+    expect(clusterClassOf("t2")).toContain(tabletAndUp);
+  });
+});
