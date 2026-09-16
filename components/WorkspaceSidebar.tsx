@@ -74,6 +74,7 @@ import {
   statusBucket,
   type ManualStatus,
 } from "@/lib/status";
+import { containsThread } from "@/lib/contains-thread";
 
 function SidebarBody(props: PluginThreadListProps) {
   const { activeThreadId, onNavigate } = props;
@@ -879,16 +880,6 @@ function Skeleton() {
   );
 }
 
-function containsThread(
-  node: { thread: { id: string }; children: unknown[] },
-  threadId: string | null,
-): boolean {
-  if (threadId === null) return false;
-  if (node.thread.id === threadId) return true;
-  return (node.children as (typeof node)[]).some((child) =>
-    containsThread(child, threadId),
-  );
-}
 
 /**
  * A crash in a replaced thread list is total and silent: bb re-renders its own

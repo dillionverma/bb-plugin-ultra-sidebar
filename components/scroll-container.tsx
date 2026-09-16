@@ -72,6 +72,12 @@ export interface WindowedRows<T> {
   listRef: (element: HTMLElement | null) => void;
   /** The row behind a virtual item. */
   rowAt(item: VirtualItem): T;
+  /** The shared scroll area, read live. */
+  getScroller(): HTMLElement | null;
+  /** The mounted list element, read live. */
+  getList(): HTMLElement | null;
+  /** Scroll the area so the row at `index` sits in the middle of it. */
+  scrollToIndex(index: number): void;
 }
 
 /**
@@ -126,5 +132,8 @@ export function useWindowedRows<T>(
     measure: virtualizer.measureElement,
     listRef: setList,
     rowAt: (item) => rows[item.index]!,
+    getScroller: () => container?.ref.current ?? null,
+    getList: () => list,
+    scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
   };
 }

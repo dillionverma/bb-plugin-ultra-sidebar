@@ -16,6 +16,8 @@ import type { PullRequestMap } from "@/hooks/useThreadPullRequests";
 import { guardHandle } from "@/hooks/useSidebarDnd";
 import { sectionKey, sortableId, type DndData, type DropZone } from "@/lib/dnd";
 import { isSyntheticSectionId } from "@/lib/regroup";
+import { containsThread } from "@/lib/contains-thread";
+import { revealRow } from "@/lib/reveal-row";
 import { useSidebar } from "./sidebar-context";
 import { useWindowedRows } from "./scroll-container";
 import { ThreadRow } from "./ThreadRow";
@@ -243,6 +245,25 @@ function GroupRows({
     keyOf: (node) => node.thread.id,
     estimateSize: () => estimate,
   });
+  // Bring the thread the user is looking at into view when it changed from
+  // somewhere other than a click on its row: Mod+[ / Mod+], the palette, a
+  // link. A row already on screen is left where it is.
+  const revealRef = useRef({ roots: group.roots, windowed });
+  revealRef.current = { roots: group.roots, windowed };
+  const activeThreadId = sidebar.activeThreadId;
+  useEffect(() => {
+    if (activeThreadId === null) return;
+    const { roots, windowed: current } = revealRef.current;
+    const rootIndex = roots.findIndex((root) => containsThread(root, activeThreadId));
+    if (rootIndex === -1) return;
+    return revealRow({
+      getScroller: () => revealRef.current.windowed.getScroller(),
+      getList: () => revealRef.current.windowed.getList(),
+      threadId: activeThreadId,
+      rootIndex,
+      scrollToIndex: current.scrollToIndex,
+    });
+  }, [activeThreadId]);
   if (!windowed.active) {
     return (
       <ul ref={windowed.listRef} className={className}>
