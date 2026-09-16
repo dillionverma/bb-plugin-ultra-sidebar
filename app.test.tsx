@@ -217,6 +217,46 @@ describe("ultra sidebar thread list", () => {
     });
   });
 
+  it.each(["project", "status"] as const)("lifts a pinned thread into its own list in %s grouping", async (mode) => {
+    const slot = await mount({
+      mode,
+      threads: [
+        thread({ id: "t1", projectId: "p1" }),
+        thread({ id: "t2", projectId: "p2", isPinned: true }),
+      ],
+    });
+    const pinned = heading(slot, "Pinned");
+    expect(pinned.textContent).toContain("t2");
+    expect(Array.from(slot.container.querySelectorAll("section"))[0]).toBe(pinned);
+    // And it is not also left in the list it was lifted out of.
+    expect(
+      Array.from(slot.container.querySelectorAll('[data-sidebar-thread-id="t2"]')),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    ["project", false], ["project", true], ["status", false], ["status", true],
+  ] as const)("offers the pin on every row in %s grouping, compact=%s", async (mode, compact) => {
+    const slot = await mount({
+      mode,
+      compact,
+      threads: [
+        thread({ id: "live", projectId: "p1" }),
+        thread({ id: "parked", projectId: "p1" }),
+      ],
+      sidebarState: {
+        ...state,
+        lifecycle: [{ threadId: "parked", status: "done", snoozedUntil: null }],
+      },
+    });
+    for (const id of ["live", "parked"]) {
+      const row = slot.container.querySelector(`[data-sidebar-thread-id="${id}"]`)!;
+      expect(
+        within(row as HTMLElement).queryByLabelText("Pin to the top"),
+      ).not.toBeNull();
+    }
+  });
+
   it("draws a project's own artwork on its heading and on rows that name it", async () => {
     const glyph = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0"/></svg>';
     const slot = await mount({

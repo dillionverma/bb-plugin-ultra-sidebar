@@ -253,7 +253,15 @@ function SidebarBody(props: PluginThreadListProps) {
   // about which threads are pinned.
   const setPinned = useCallback(
     (threadId: string, pinned: boolean) => {
-      void threadActions.setPinned(threadId, pinned);
+      // A rejected pin used to be swallowed: the row just did not move, which
+      // reads as the feature not working rather than as an error.
+      threadActions.setPinned(threadId, pinned).catch((cause: unknown) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        toast.error(
+          `Couldn't ${pinned ? "pin" : "unpin"} that thread: ${message}`,
+          { id: "sidebar-action" },
+        );
+      });
     },
     [threadActions],
   );

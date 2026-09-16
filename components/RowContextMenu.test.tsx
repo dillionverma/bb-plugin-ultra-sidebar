@@ -92,6 +92,12 @@ describe("thread context menus", () => {
     expect(actions.setPinned).toHaveBeenCalledWith("t1", false);
   });
 
+  it("does not offer the pin on a subagent, which the Pinned list cannot hold", async () => {
+    mount("parent");
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem", { name: /Pin to top/ })).toBeNull();
+  });
+
   it("reorders from the keyboard, and disables it for nested threads", async () => {
     mount();
     await openOrderMenu();

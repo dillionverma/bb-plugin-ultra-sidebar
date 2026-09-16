@@ -149,11 +149,16 @@ export function RowContextMenu({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup aria-label="Organize thread">
-          <ContextMenuItem onSelect={() => sidebar.setPinned(thread.id, !thread.isPinned)}>
-            <Icon name={thread.isPinned ? "PinOff" : "Pin"} />
-            {thread.isPinned ? "Unpin from top" : "Pin to top"}
-            <ContextMenuShortcut>P</ContextMenuShortcut>
-          </ContextMenuItem>
+          {/* Only a root pins. A subagent's place is under the thread that
+              spawned it, so the Pinned list would never show it and the
+              action would be a silent no-op. */}
+          {thread.parentThreadId === null && (
+            <ContextMenuItem onSelect={() => sidebar.setPinned(thread.id, !thread.isPinned)}>
+              <Icon name={thread.isPinned ? "PinOff" : "Pin"} />
+              {thread.isPinned ? "Unpin from top" : "Pin to top"}
+              <ContextMenuShortcut>P</ContextMenuShortcut>
+            </ContextMenuItem>
+          )}
           <OrderMenu item={item} canReorder={thread.parentThreadId === null} />
           <ContextMenuSub>
             <ContextMenuSubTrigger>
