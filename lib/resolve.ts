@@ -34,13 +34,24 @@ export interface ThreadNode {
   hasUnreadDescendant: boolean;
   /** True when any descendant is waiting on the user. */
   hasPendingDescendant: boolean;
+  /**
+   * True when any descendant is actually running. Without this a collapsed
+   * parent of five busy agents looks exactly like a collapsed parent of five
+   * idle ones, which is the difference between "leave it" and "watch it".
+   */
+  hasWorkingDescendant: boolean;
+  /**
+   * Descendants filed Done, all levels. With descendantCount this is how far
+   * a batch of spawned threads has actually got, which is the one thing a
+   * collapsed parent could never say before.
+   */
+  doneDescendants: number;
 }
 
 /** Every root thread of one project, in the order the sidebar shows them. */
 export interface ProjectGroup {
   projectId: string;
   name: string;
-  isPersonal: boolean;
   roots: ThreadNode[];
   threadCount: number;
   /** True when somebody has hand-ordered these rows. */
@@ -108,6 +119,24 @@ const LIVE_INDICATORS = new Set([
   "plan-mode",
   "goal",
 ]);
+
+/**
+ * Whether an agent is running right now. Deliberately narrower than
+ * `wakesEarly`: a thread waiting on a person is not working, and a collapsed
+ * parent says those two things differently.
+ */
+function isWorking(thread: PluginSidebarThread): boolean {
+  if (thread.hasPendingInteraction) return false;
+  if (LIVE_INDICATORS.has(thread.indicator)) return true;
+  const activity = thread.activity;
+  return (
+    activity.workflows > 0 ||
+    activity.backgroundAgents > 0 ||
+    activity.backgroundCommands > 0 ||
+    activity.planMode > 0 ||
+    activity.goals > 0
+  );
+}
 
 /**
  * Snooze hides a thread that is waiting on nobody. The moment it asks for a
@@ -182,9 +211,14 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
   // a thread.
   const snoozedUntil = new Map<string, number>();
   const wokenEarly: string[] = [];
+  // Filed Done by hand, which is the only "finished" this resolver can see —
+  // a merged pull request also reads as done on a row, but pull requests are
+  // fetched per row on the client and never reach this walk.
+  const doneById = new Set<string>();
   for (const entry of input.lifecycle) {
     const thread = visibleById.get(entry.threadId);
     if (thread === undefined) continue;
+    if (entry.status === "done") doneById.add(entry.threadId);
     if (entry.snoozedUntil !== null && entry.snoozedUntil > now) {
       if (wakesEarly(thread)) wokenEarly.push(thread.id);
       else snoozedUntil.set(thread.id, entry.snoozedUntil);
@@ -227,12 +261,11 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     const threadsHere = rootsByProject.get(project.id) ?? [];
     const sorted = sortRoots(threadsHere, orderIndex);
     const groupRoots = sorted.map((thread) =>
-      buildNode(thread, 0, childrenByParent, new Set([thread.id])),
+      buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
     );
     return {
       projectId: project.id,
       name: project.name,
-      isPersonal: project.isPersonal,
       roots: groupRoots,
       threadCount: countRows(groupRoots),
       manual: threadsHere.some((thread) =>
@@ -247,12 +280,11 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     if (projectById.has(projectId)) continue;
     const sorted = sortRoots(threadsHere, orderIndex);
     const groupRoots = sorted.map((thread) =>
-      buildNode(thread, 0, childrenByParent, new Set([thread.id])),
+      buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
     );
     projectGroups.push({
       projectId,
       name: "Unknown project",
-      isPersonal: false,
       roots: groupRoots,
       threadCount: countRows(groupRoots),
       manual: false,
@@ -260,7 +292,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
   }
 
   const pinned = sortRoots(pinnedRoots, orderIndex).map((thread) =>
-    buildNode(thread, 0, childrenByParent, new Set([thread.id])),
+    buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
   );
 
   snoozed.sort(
@@ -312,12 +344,15 @@ function buildNode(
   depth: number,
   childrenByParent: ReadonlyMap<string, PluginSidebarThread[]>,
   seen: Set<string>,
+  doneIds: ReadonlySet<string>,
 ): ThreadNode {
   const rawChildren = childrenByParent.get(thread.id) ?? [];
   const children: ThreadNode[] = [];
   let descendantCount = 0;
+  let doneDescendants = 0;
   let hasUnreadDescendant = false;
   let hasPendingDescendant = false;
+  let hasWorkingDescendant = false;
 
   if (depth < MAX_DESCENT) {
     // Subagents read best in spawn order, unlike roots which are recency-first.
@@ -327,15 +362,18 @@ function buildNode(
     for (const child of ordered) {
       if (seen.has(child.id)) continue; // cycle guard
       seen.add(child.id);
-      const node = buildNode(child, depth + 1, childrenByParent, seen);
+      const node = buildNode(child, depth + 1, childrenByParent, seen, doneIds);
       children.push(node);
       descendantCount += 1 + node.descendantCount;
+      doneDescendants += (doneIds.has(child.id) ? 1 : 0) + node.doneDescendants;
       hasUnreadDescendant =
         hasUnreadDescendant || child.isUnread || node.hasUnreadDescendant;
       hasPendingDescendant =
         hasPendingDescendant ||
         child.hasPendingInteraction ||
         node.hasPendingDescendant;
+      hasWorkingDescendant =
+        hasWorkingDescendant || isWorking(child) || node.hasWorkingDescendant;
     }
   }
 
@@ -344,8 +382,10 @@ function buildNode(
     depth,
     children,
     descendantCount,
+    doneDescendants,
     hasUnreadDescendant,
     hasPendingDescendant,
+    hasWorkingDescendant,
   };
 }
 

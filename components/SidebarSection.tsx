@@ -530,7 +530,6 @@ function SectionGlyph({ section }: { section: Section }) {
     return (
       <ProjectIcon
         projectId={section.projectId}
-        isPersonal={section.isPersonal}
         className="size-3.5 shrink-0 opacity-80"
       />
     );

@@ -51,7 +51,6 @@ function mountSection(section: Partial<Section>) {
         name: "Alpha",
         kind: "project",
         projectId: "p1",
-        isPersonal: false,
         bucket: null,
         roots: [],
         threadCount: 0,

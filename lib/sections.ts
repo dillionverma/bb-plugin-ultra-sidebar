@@ -44,8 +44,6 @@ export interface Section {
   kind: "pinned" | "project" | "status";
   /** The project this section names, for a project section. */
   projectId: string | null;
-  /** True for bb's implicit personal project, which draws its own glyph. */
-  isPersonal: boolean;
   /** The bucket this section names, for a status section. */
   bucket: StatusBucket | null;
   roots: ThreadNode[];
@@ -90,7 +88,6 @@ export function buildSections(input: SectionsInput): Section[] {
       name: "Pinned",
       kind: "pinned",
       projectId: null,
-      isPersonal: false,
       bucket: null,
       roots: pinnedRoots,
       threadCount: countRows(pinnedRoots),
@@ -154,7 +151,6 @@ function projectSection(group: ProjectGroup, roots: ThreadNode[]): Section {
     name: group.name,
     kind: "project",
     projectId: group.projectId,
-    isPersonal: group.isPersonal,
     bucket: null,
     roots,
     threadCount: countRows(roots),
@@ -181,7 +177,6 @@ function statusSection(
     name: label,
     kind: "status",
     projectId: null,
-    isPersonal: false,
     bucket,
     roots,
     threadCount: countRows(roots),

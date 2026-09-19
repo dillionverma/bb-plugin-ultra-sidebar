@@ -20,6 +20,8 @@ import { threadStatus, TONE_TEXT } from "./ThreadStatus";
 import type { ThreadPullRequest } from "@/hooks/useThreadPullRequests";
 import type { ManualStatus } from "@/lib/status";
 import { flattenStack, StackList, usePullRequestStack } from "./PullRequestStack";
+import { SubtreeChildList } from "./SubtreeSummary";
+import type { ThreadNode } from "@/lib/resolve";
 
 function Fact({ icon, label, children }: {
   icon: string;
@@ -53,6 +55,7 @@ export function ThreadDetails({
   pullRequest,
   manualStatus = null,
   descendantCount,
+  node,
 }: {
   thread: PluginSidebarThread;
   projectName: string;
@@ -61,6 +64,8 @@ export function ThreadDetails({
   pullRequest: ThreadPullRequest | undefined;
   manualStatus?: ManualStatus | null;
   descendantCount: number;
+  /** The tree node, when the caller has one, so the card can name the children. */
+  node?: ThreadNode;
 }) {
   // Row settings can hide the model, but an open detail card still needs it.
   const execution = useThreadExecution([thread], cachedExecution === undefined).get(thread.id) ?? cachedExecution;
@@ -240,7 +245,18 @@ export function ThreadDetails({
 
       {descendantCount === 0 && runningCounts.length === 0 ? null : (
         <div className="flex flex-col gap-1.5 text-muted-foreground">
-          {descendantCount === 0 ? null : <Fact icon="Bot" label="Subagents">{descendantCount} nested thread{descendantCount === 1 ? "" : "s"}</Fact>}
+          {descendantCount === 0 ? null : (
+            <Fact icon="Bot" label="Nested threads">
+              {descendantCount} nested thread{descendantCount === 1 ? "" : "s"}
+              {/* Named, not just counted: the row's chip already says how many
+                  and how urgent, so the only thing left to say is which. */}
+              {node === undefined ? null : (
+                <div className="mt-1.5">
+                  <SubtreeChildList node={node} />
+                </div>
+              )}
+            </Fact>
+          )}
           {runningCounts.length === 0 ? null : <Fact icon="Workflow" label="Running">{runningCounts.join(", ")}</Fact>}
         </div>
       )}

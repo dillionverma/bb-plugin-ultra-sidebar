@@ -81,6 +81,7 @@ const state: SidebarState = { revision: 1, order: [], lifecycle: [] };
 
 async function mount(options: {
   threads: PluginSidebarThread[];
+  projects?: { id: string; name: string; isPersonal: boolean }[];
   sidebarState?: SidebarState;
   activeThreadId?: string | null;
   mode?: "status" | "project";
@@ -108,7 +109,7 @@ async function mount(options: {
       sidebarThreads: {
         status: "ready",
         threads: options.threads,
-        projects,
+        projects: options.projects ?? projects,
       },
       rpc: {
         "threads.title": input => options.threads.find(t => t.id === (input as {threadId:string}).threadId)?.title ?? null,
@@ -1419,6 +1420,22 @@ describe("project context and change counts", () => {
     await waitFor(() => expect(readDiffs).toHaveBeenCalledOnce());
     expect(slot.container.querySelectorAll("[data-thread-project]")).toHaveLength(2);
     expect(slot.container.querySelector("[data-thread-diff]")).toBeNull();
+  });
+
+  it("leaves the implicit personal project unnamed on its rows", async () => {
+    // Every thread that belongs to no project lands in Personal, so the badge
+    // would read "Personal" on row after row and say nothing about any of them.
+    const slot = await mount({
+      compact: true,
+      mode: "status",
+      projects: [{ id: "p0", name: "Personal", isPersonal: true }, ...projects],
+      threads: [
+        thread({ id: "loose", projectId: "p0" }),
+        thread({ id: "alpha", projectId: "p1" }),
+      ],
+    });
+    const badges = Array.from(slot.container.querySelectorAll("[data-thread-project]"));
+    expect(badges.map(badge => badge.textContent)).toEqual(["Alpha"]);
   });
 
   it("keeps project context on parked rows without dangling mode separators", async () => {

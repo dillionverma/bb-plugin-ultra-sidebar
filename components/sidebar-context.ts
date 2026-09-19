@@ -22,7 +22,10 @@ export interface SidebarContextValue {
   compactRows: boolean;
   /** Which badges the line under a title shows. */
   rowDetails: RowDetails;
-  /** The host's name for a project, or "" when it no longer reports one. */
+  /**
+   * The host's name for a project, or "" when it no longer reports one or
+   * the project is bb's implicit personal one, which rows do not name.
+   */
   projectNameOf(projectId: string): string;
   /** A project's icon or logo, once found; null means the folder glyph. */
   artworkOf(projectId: string): ProjectArtwork | null;

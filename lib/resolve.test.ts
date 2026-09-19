@@ -164,6 +164,68 @@ describe("resolveTree", () => {
     expect(root.hasPendingDescendant).toBe(true);
   });
 
+  it("rolls a working descendant up from any depth", () => {
+    const tree = run(
+      Array.from({ length: 6 }, (_, i) =>
+        thread({
+          id: `t${i}`,
+          projectId: "p1",
+          parentThreadId: i === 0 ? null : `t${i - 1}`,
+          createdAt: i + 1,
+          // Only the deepest node is running.
+          indicator: i === 5 ? "runtime" : "none",
+        }),
+      ),
+    );
+    const root = group(tree, "p1").roots[0]!;
+    expect(root.hasWorkingDescendant).toBe(true);
+    // And a subtree at rest says so, rather than defaulting to busy.
+    expect(root.hasPendingDescendant).toBe(false);
+  });
+
+  it("does not call a thread waiting on the user 'working'", () => {
+    const tree = run([
+        thread({ id: "root", projectId: "p1" }),
+        thread({
+          id: "kid",
+          projectId: "p1",
+          parentThreadId: "root",
+          createdAt: 2,
+          indicator: "runtime",
+          hasPendingInteraction: true,
+        }),
+    ]);
+    const root = group(tree, "p1").roots[0]!;
+    expect(root.hasPendingDescendant).toBe(true);
+    expect(root.hasWorkingDescendant).toBe(false);
+  });
+
+  it("counts descendants filed Done at every level", () => {
+    const tree = run(
+      Array.from({ length: 5 }, (_, i) =>
+        thread({
+          id: `t${i}`,
+          projectId: "p1",
+          parentThreadId: i === 0 ? null : `t${i - 1}`,
+          createdAt: i + 1,
+        }),
+      ),
+      [],
+      false,
+      // One direct child and one great-grandchild, so the count cannot be
+      // coming from a single level.
+      [
+        { threadId: "t1", status: "done", snoozedUntil: null },
+        { threadId: "t4", status: "done", snoozedUntil: null },
+      ],
+    );
+    const root = group(tree, "p1").roots[0]!;
+    expect(root.descendantCount).toBe(4);
+    expect(root.doneDescendants).toBe(2);
+    // The root's own status never counts toward its own progress.
+    expect(root.children[0]!.doneDescendants).toBe(1);
+  });
+
   it("keeps every row of a forty-deep chain", () => {
     // Fails before MAX_PARENT_WALK became MAX_DESCENT only past depth 32, so
     // 40 is the shortest chain that proves the ceiling is gone in spirit;

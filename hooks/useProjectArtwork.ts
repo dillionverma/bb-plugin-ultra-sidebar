@@ -29,11 +29,13 @@ export function useProjectArtwork(
   // this window: asking again on each re-render would be a search per paint.
   const asked = useRef(new Set<string>());
 
-  // Personal has no files to search. A primitive key, so the effect fires on
-  // a real change rather than on every new array the host hands us.
+  // A primitive key, so the effect fires on a real change rather than on
+  // every new array the host hands us. A project with no checkout to search
+  // is not filtered out here: the server answers "missing" for it and the
+  // row keeps its folder icon, same as any project whose files have no icon.
   const pendingKey = enabled
     ? projects
-        .filter((project) => !project.isPersonal && !asked.current.has(project.id))
+        .filter((project) => !asked.current.has(project.id))
         .map((project) => project.id)
         .join(",")
     : "";

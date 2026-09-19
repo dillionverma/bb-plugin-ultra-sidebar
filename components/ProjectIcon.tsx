@@ -14,16 +14,14 @@ export const PROJECT_ICON_URL = "/api/v1/plugins/workspace-sidebar/http/project-
 
 export function ProjectIcon({
   projectId,
-  isPersonal = false,
   className,
 }: {
   projectId: string;
-  isPersonal?: boolean;
   /** Sizing and color; the image fills it, the fallback glyph inherits it. */
   className?: string;
 }) {
   const sidebar = useSidebar();
-  const artwork = isPersonal ? null : sidebar.artworkOf(projectId);
+  const artwork = sidebar.artworkOf(projectId);
   // A route that answers 404 (the cache expired and the file is gone) must
   // not leave a broken-image box in the sidebar.
   const [failed, setFailed] = useState<string | null>(null);
@@ -66,7 +64,7 @@ export function ProjectIcon({
 
   return (
     <span data-project-artwork="folder" className={cn("inline-flex shrink-0", className)}>
-      <Icon name={isPersonal ? "Folder02" : "Folder"} aria-hidden className="size-full" />
+      <Icon name="Folder" aria-hidden className="size-full" />
     </span>
   );
 }

@@ -30,6 +30,7 @@ import type { ThreadExecution } from "@/hooks/useThreadExecution";
 import { useSidebar } from "./sidebar-context";
 import { StatusIcon } from "./StatusIcon";
 import { ThreadOrb, agentOrb } from "./ThreadOrb";
+import { SubtreeSummary, subtreeLabel, subtreeTone } from "./SubtreeSummary";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import { RowContextMenu } from "./RowContextMenu";
 import { RowDropDecor, useDragActive } from "./drag-state-context";
@@ -322,6 +323,7 @@ export const ThreadRow = memo(function ThreadRow({
       pullRequest={pullRequest}
       manualStatus={manualStatus}
       descendantCount={descendantCount}
+      node={node}
     />
   );
   // Touch has no hover, so coarse pointers keep the actions in view. A phone
@@ -615,28 +617,9 @@ export const ThreadRow = memo(function ThreadRow({
               {/* Roll a collapsed subtree's state up, so a waiting subagent is
                 never silently hidden behind a chevron. */}
               {hasChildren && !isExpanded ? (
-                <RowTip
-                  label={
-                    `${descendantCount} ${descendantCount === 1 ? "subagent" : "subagents"}` +
-                    (node.hasPendingDescendant
-                      ? " · one needs you"
-                      : node.hasUnreadDescendant
-                        ? " · unread"
-                        : "")
-                  }
-                >
-                  <span
-                    aria-label={`${descendantCount} subagents`}
-                    className={cn(
-                      "shrink-0 rounded-full px-1.5 text-[10px] leading-4 tabular-nums",
-                      node.hasPendingDescendant
-                        ? "bg-primary/20 text-foreground"
-                        : node.hasUnreadDescendant
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground/70",
-                    )}
-                  >
-                    {descendantCount}
+                <RowTip label={subtreeLabel(node, subtreeTone(node))}>
+                  <span className="flex shrink-0 items-center">
+                    <SubtreeSummary node={node} />
                   </span>
                 </RowTip>
               ) : null}

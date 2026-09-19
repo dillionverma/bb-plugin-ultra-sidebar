@@ -180,9 +180,16 @@ function SidebarBody(props: PluginThreadListProps) {
     [tree],
   );
 
+  // bb's implicit personal project is left unnamed on purpose. It is where
+  // every thread that belongs to no project lands, so a badge reading
+  // "Personal" appears on row after row without telling you anything about
+  // any of them. Real projects are still named.
   const projectNameById = useMemo(() => {
     const byId = new Map<string, string>();
-    for (const project of host.projects) byId.set(project.id, project.name);
+    for (const project of host.projects) {
+      if (project.isPersonal) continue;
+      byId.set(project.id, project.name);
+    }
     return byId;
   }, [host.projects]);
   // Icons and logos found in each project's files; a search per project,
