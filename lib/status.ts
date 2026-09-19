@@ -51,6 +51,28 @@ export const PARKED_BUCKETS: readonly StatusBucket[] = [
   "canceled",
 ];
 
+/**
+ * Whether a person can put a thread in this bucket.
+ *
+ * The three manual statuses file it outright, and In progress is reachable by
+ * clearing one. In review is not: it means "this thread has a pull request
+ * open", and no menu item or drag can make that true. Everything that offers
+ * a bucket to choose asks this first, so the one impossible choice is absent
+ * rather than present and quietly doing something else.
+ */
+export function canFileInto(bucket: StatusBucket): boolean {
+  return bucket !== "in-review";
+}
+
+/**
+ * Whether the work in this bucket is over, so an action on the thread reads
+ * "Reopen" rather than "Mark done". Backlog is parked but not finished:
+ * nothing has happened to it yet.
+ */
+export function isFinished(bucket: StatusBucket): boolean {
+  return bucket === "done" || bucket === "canceled";
+}
+
 /** The subset of a pull request that decides a bucket. */
 export interface PullRequestLike {
   state: "open" | "draft" | "merged" | "closed";

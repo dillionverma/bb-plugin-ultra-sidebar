@@ -8,7 +8,7 @@
 // action, or null for a hover that means nothing.
 import type { ItemKind } from "./types";
 import { PINNED_SECTION_ID, projectFromSectionId } from "./sections";
-import { bucketFromSectionId, type StatusBucket } from "./status";
+import { bucketFromSectionId, canFileInto, type StatusBucket } from "./status";
 
 /** Minimum vertical travel before a press becomes a reorder. */
 export const ENGAGE_PX = 6;
@@ -109,7 +109,8 @@ function projectDrop(source: DragSource, zone: DropZone): DropResolution | null 
  * Pinned pins it, and its own project takes it back — unpinned, and off any
  * parked pile it was on. Another project's heading means nothing, because a
  * drag cannot change which project a thread belongs to and pretending
- * otherwise would be a lie.
+ * otherwise would be a lie. The In review heading means nothing for the same
+ * reason: it is a fact about a pull request, not a pile to put things in.
  */
 export function resolveDrop(
   source: DragSource,
@@ -151,6 +152,10 @@ export function resolveDrop(
 
   const bucket = bucketFromSectionId(zone.sectionId);
   if (bucket !== null) {
+    // Refusing the drop here is what keeps the ring dark over In review, so
+    // the gesture reads as impossible rather than as one that appeared to
+    // land and then filed the thread somewhere else.
+    if (!canFileInto(bucket)) return null;
     return {
       sectionId: zone.sectionId,
       anchorRefId,

@@ -135,9 +135,11 @@ export function buildSections(input: SectionsInput): Section[] {
     sections.push(projectSection(group, active));
   }
 
+  // An empty pile stays off the list, except during a drag, when it is the
+  // only place a thread can be filed — the same reason Pinned stays up.
   for (const bucket of PARKED_BUCKETS) {
-    const nodes = parked.get(bucket);
-    if (nodes === undefined || nodes.length === 0) continue;
+    const nodes = parked.get(bucket) ?? [];
+    if (nodes.length === 0 && !dragging) continue;
     sections.push(
       statusSection(bucket, STATUS_LABEL[bucket], nodes, tree.orderIndex),
     );

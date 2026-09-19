@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { bucketFromSectionId, statusBucket, statusSectionId } from "./status";
+import {
+  STATUS_BUCKETS,
+  bucketFromSectionId,
+  canFileInto,
+  isFinished,
+  statusBucket,
+  statusSectionId,
+} from "./status";
 
 describe("statusBucket", () => {
   it("defaults to in progress", () => {
@@ -18,6 +25,19 @@ describe("statusBucket", () => {
     expect(statusBucket("backlog", { state: "open" })).toBe("backlog");
     expect(statusBucket("done", undefined)).toBe("done");
     expect(statusBucket("canceled", { state: "merged" })).toBe("canceled");
+  });
+});
+
+describe("what a person can do to a bucket", () => {
+  const keys = (pick: (bucket: (typeof STATUS_BUCKETS)[number]) => boolean) =>
+    STATUS_BUCKETS.filter(pick).map((bucket) => bucket.key);
+
+  it("refuses In review alone: the pull request owns it, not the person", () => {
+    expect(keys((bucket) => !canFileInto(bucket.key))).toEqual(["in-review"]);
+  });
+
+  it("counts Done and Canceled as finished — Backlog is parked, not over", () => {
+    expect(keys((bucket) => isFinished(bucket.key))).toEqual(["done", "canceled"]);
   });
 });
 

@@ -45,7 +45,12 @@ import {
 } from "./MetaBadges";
 import { ThreadStatus, threadStatus } from "./ThreadStatus";
 import type { ThreadPullRequest } from "@/hooks/useThreadPullRequests";
-import { STATUS_LABEL, statusBucket } from "@/lib/status";
+import {
+  PARKED_BUCKETS,
+  STATUS_LABEL,
+  isFinished,
+  statusBucket,
+} from "@/lib/status";
 
 /**
  * Long enough that dragging across rows, or just moving the pointer to
@@ -75,7 +80,7 @@ function ParkButton({
   onActivate,
 }: {
   label: string;
-  icon: "Clock" | "Check" | "RotateCcw" | "Pin" | "PinOff";
+  icon: "Clock" | "Check" | "RotateCcw" | "Spinner" | "Pin" | "PinOff";
   text?: string;
   onActivate: () => void;
 }) {
@@ -361,21 +366,33 @@ export const ThreadRow = memo(function ThreadRow({
           onActivate={() => sidebar.setPinned(thread.id, !thread.isPinned)}
         />
       ) : null}
-      {bucket === "in-progress" || bucket === "in-review" ? (
-        <>
-          <ParkButton
-            label="Hide until tomorrow at 9am"
-            icon="Clock"
-            onActivate={() => sidebar.setSnoozed(thread.id, tomorrowMorning())}
-          />
-          <ParkButton
-            label="Mark done"
-            icon="Check"
-            text={compact ? undefined : "Done"}
-            onActivate={() => sidebar.setStatus(thread.id, "done")}
-          />
-        </>
-      ) : null}
+      {/* Snoozing is for work that is in front of you. A parked thread is
+          already out of the list, so the button would hide what is hidden. */}
+      {PARKED_BUCKETS.includes(bucket) ? null : (
+        <ParkButton
+          label="Hide until tomorrow at 9am"
+          icon="Clock"
+          onActivate={() => sidebar.setSnoozed(thread.id, tomorrowMorning())}
+        />
+      )}
+      {/* Every row can be finished or unfinished, a backlog row included —
+          this is the pointer twin of D, and the two agree on which way it
+          goes. Reopen hands the thread back to its own pull request. */}
+      {isFinished(bucket) ? (
+        <ParkButton
+          label="Reopen"
+          icon="Spinner"
+          text={compact ? undefined : "Reopen"}
+          onActivate={() => sidebar.setStatus(thread.id, null)}
+        />
+      ) : (
+        <ParkButton
+          label="Mark done"
+          icon="Check"
+          text={compact ? undefined : "Done"}
+          onActivate={() => sidebar.setStatus(thread.id, "done")}
+        />
+      )}
     </span>
   );
 

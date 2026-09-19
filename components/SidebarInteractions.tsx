@@ -29,6 +29,7 @@ import {
   DialogDescription,
 } from "./ui/dialog";
 import { useSidebar } from "./sidebar-context";
+import { isFinished, isStatusBucket } from "../lib/status";
 import type { UndoHistory } from "../lib/history";
 
 const ROW = "[data-sidebar-thread-shortcut-target]";
@@ -432,7 +433,10 @@ export function SidebarInteractions({
         sidebar.openThread(id, true);
         handled();
       } else if (key === "d") {
-        status(targets(id), row.dataset.sidebarBucket === "done");
+        // Reverses on a thread that is already finished, exactly as the
+        // row's own button does.
+        const bucket = row.dataset.sidebarBucket;
+        status(targets(id), isStatusBucket(bucket) && isFinished(bucket));
         handled();
       } else if (key === "s") {
         snooze(targets(id));

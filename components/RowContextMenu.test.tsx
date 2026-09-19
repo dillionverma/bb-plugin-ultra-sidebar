@@ -36,6 +36,13 @@ function mount(
   return onBackgroundContextMenu;
 }
 
+async function openSubmenu(trigger: RegExp, group: string) {
+  const item = await screen.findByRole("menuitem", { name: trigger });
+  item.focus();
+  fireEvent.keyDown(item, { key: "ArrowRight" });
+  return screen.findByRole("group", { name: group });
+}
+
 async function openOrderMenu() {
   const order = await screen.findByRole("menuitem", { name: /^Order/ });
   order.focus();
@@ -97,6 +104,20 @@ describe("thread context menus", () => {
     expect(screen.queryByRole("menuitem", { name: /Pin to top/ })).toBeNull();
   });
 
+  it("offers every status but In review, which no choice of ours can bring about", async () => {
+    mount();
+    const status = await openSubmenu(/^Status/, "Thread status");
+    expect(
+      within(status)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent?.replace(/D$/, "")),
+    ).toEqual(["Done", "In progress", "Backlog", "Canceled"]);
+    // Reachable from anywhere, a backlogged thread included: the row's own
+    // button is hidden on some rows, this never is.
+    fireEvent.click(within(status).getByRole("menuitem", { name: /^Done/ }));
+    expect(actions.setStatus).toHaveBeenCalledWith("t1", "done");
+  });
+
   it("reorders from the keyboard, and disables it for nested threads", async () => {
     mount();
     await openOrderMenu();
@@ -128,6 +149,18 @@ describe("section context menu", () => {
     mountSection({ manual: true });
     fireEvent.click(await screen.findByRole("menuitem", { name: /Sort by most recent/ }));
     expect(actions.resetOrder).toHaveBeenCalledWith("project:p1");
+  });
+
+  it("says why the In review heading takes no drop, rather than leaving a dead target", async () => {
+    mountSection({ id: "status:in-review", name: "In review", kind: "status", projectId: null, bucket: "in-review" });
+    expect(
+      await screen.findByRole("menuitem", { name: /In review follows the pull request/ }),
+    ).toBeTruthy();
+    cleanup();
+    // Every other bucket does take a drop, so none of them explains itself.
+    mountSection({ id: "status:backlog", name: "Backlog", kind: "status", projectId: null, bucket: "backlog" });
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem", { name: /follows the pull request/ })).toBeNull();
   });
 
   it("has nothing to start or reorder on a status bucket", async () => {

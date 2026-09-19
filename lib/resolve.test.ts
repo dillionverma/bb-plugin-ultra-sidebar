@@ -490,6 +490,28 @@ describe("buildSections", () => {
     expect(sections[2]!.roots.map((root) => root.thread.id)).toEqual(["shipped"]);
   });
 
+  // Without this a thread could not be sent to Backlog in the project view
+  // until something was already there — the same trap Pinned avoids above.
+  it("raises the empty parked piles during a drag, so each one can take a drop", () => {
+    const tree = run([thread({ id: "live", projectId: "p1" })]);
+    const parked = (dragging: boolean) =>
+      buildSections({
+        tree,
+        groupBy: "project",
+        projectIds: [],
+        dragging,
+        bucketOf: bucketed({}),
+      })
+        .filter((section) => section.kind === "status")
+        .map((section) => section.id);
+    expect(parked(false)).toEqual([]);
+    expect(parked(true)).toEqual([
+      "status:done",
+      "status:backlog",
+      "status:canceled",
+    ]);
+  });
+
   it("shows all five buckets when grouping by status, empty ones included", () => {
     const tree = run([thread({ id: "t1", projectId: "p1" })]);
     expect(sectionsOf(tree, "status").map((section) => section.name)).toEqual([

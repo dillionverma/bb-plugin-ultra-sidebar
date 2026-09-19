@@ -258,6 +258,46 @@ describe("ultra sidebar thread list", () => {
     }
   });
 
+  it("finishes and reopens from any row, a backlogged one included", async () => {
+    const slot = await mount({
+      threads: [
+        thread({ id: "parked", projectId: "p1" }),
+        thread({ id: "shipped", projectId: "p1" }),
+      ],
+      sidebarState: {
+        ...state,
+        lifecycle: [
+          { threadId: "parked", status: "backlog", snoozedUntil: null },
+          { threadId: "shipped", status: "done", snoozedUntil: null },
+        ],
+      },
+    });
+    // Not the project heading: a parked row names its own project too, so
+    // "Alpha" is on screen more than once.
+    await slot.findByText("Backlog");
+    const row = (id: string) =>
+      slot.container.querySelector<HTMLElement>(
+        `[data-sidebar-thread-id="${id}"]`,
+      )!;
+
+    // Neither is snoozable: both are already out of the active list, so the
+    // button would hide what is hidden.
+    for (const id of ["parked", "shipped"]) {
+      expect(
+        within(row(id)).queryByLabelText("Hide until tomorrow at 9am"),
+      ).toBeNull();
+    }
+
+    // A backlogged thread can be finished, and a finished one reverses.
+    expect(within(row("shipped")).queryByLabelText("Mark done")).toBeNull();
+    fireEvent.click(within(row("parked")).getByLabelText("Mark done"));
+    await waitFor(() => expect(row("parked").dataset.sidebarBucket).toBe("done"));
+    fireEvent.click(within(row("shipped")).getByLabelText("Reopen"));
+    await waitFor(() =>
+      expect(row("shipped").dataset.sidebarBucket).toBe("in-progress"),
+    );
+  });
+
   it("draws a project's own artwork on its heading and on rows that name it", async () => {
     const glyph = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0"/></svg>';
     const slot = await mount({

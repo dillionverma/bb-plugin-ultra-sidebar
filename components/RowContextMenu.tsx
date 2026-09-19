@@ -21,23 +21,20 @@ import {
 import { Icon } from "@/components/ui/icon";
 import type { ItemRef } from "@/lib/types";
 import type { Section } from "@/lib/sections";
-import { STATUS_BUCKETS, type ManualStatus } from "@/lib/status";
+import { STATUS_BUCKETS, canFileInto, type ManualStatus } from "@/lib/status";
 import { useSidebar } from "./sidebar-context";
 import { StatusIcon } from "./StatusIcon";
 
-const STATUS_CHOICES = STATUS_BUCKETS.flatMap((bucket) =>
-  bucket.key === "in-review"
-    ? []
-    : [
-        {
-          key: bucket.key,
-          label: bucket.label,
-          value: (bucket.key === "in-progress"
-            ? null
-            : bucket.key) as ManualStatus | null,
-        },
-      ],
-);
+const STATUS_CHOICES = STATUS_BUCKETS.filter((bucket) =>
+  canFileInto(bucket.key),
+).map((bucket) => ({
+  key: bucket.key,
+  label: bucket.label,
+  // In progress is the absence of a manual status, not one of its own.
+  value: (bucket.key === "in-progress"
+    ? null
+    : bucket.key) as ManualStatus | null,
+}));
 
 const SNOOZE_CHOICES = [
   { label: "For an hour", ms: 60 * 60 * 1000 },
@@ -274,6 +271,15 @@ export function SectionContextMenu({
           <ContextMenuGroup>
             <ContextMenuItem disabled>
               <Icon name="Info" />Pinned threads stay at the top
+            </ContextMenuItem>
+          </ContextMenuGroup>
+        )}
+        {/* The one heading nothing can be dropped on, so it says why rather
+            than leaving a dead target to be discovered by trying. */}
+        {section.bucket !== null && !canFileInto(section.bucket) && (
+          <ContextMenuGroup>
+            <ContextMenuItem disabled>
+              <Icon name="Info" />In review follows the pull request
             </ContextMenuItem>
           </ContextMenuGroup>
         )}

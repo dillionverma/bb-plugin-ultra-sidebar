@@ -109,6 +109,20 @@ describe("resolveDrop across sections", () => {
     });
   });
 
+  // In review is a fact about a pull request, so the drop has to be refused
+  // outright. Accepting it would clear the manual status instead, and the row
+  // would appear to land and then settle under In progress.
+  it("refuses In review, the one bucket a drag cannot bring about", () => {
+    const review = statusSectionId("in-review");
+    for (const target of [
+      zone("section", review, review),
+      zone("thread", "t2", review),
+    ]) {
+      expect(resolveDrop(thread(p1), target)).toBeNull();
+      expect(resolveDrop(thread(PINNED_SECTION_ID), target)).toBeNull();
+    }
+  });
+
   it("never moves a thread into another project: bb owns that", () => {
     expect(resolveDrop(thread(p1), zone("thread", "t2", p2))).toBeNull();
     expect(resolveDrop(thread(p1), zone("section", p2, p2))).toBeNull();
