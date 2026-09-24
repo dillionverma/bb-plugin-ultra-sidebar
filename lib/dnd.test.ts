@@ -97,6 +97,16 @@ describe("resolveDrop across sections", () => {
     });
   });
 
+  it("reopens a finished thread dragged onto Pinned, since Pinned never shows one", () => {
+    expect(resolveDrop(thread(done), zone("section", PINNED_SECTION_ID, PINNED_SECTION_ID))).toEqual({
+      sectionId: PINNED_SECTION_ID,
+      anchorRefId: null,
+      reorder: false,
+      pin: true,
+      bucket: "in-progress",
+    });
+  });
+
   // The way back out of Done, Backlog and Canceled: the thread goes home to
   // its project and stops being parked.
   it("reopens a parked thread dropped back into its own project", () => {

@@ -8,7 +8,12 @@
 // action, or null for a hover that means nothing.
 import type { ItemKind } from "./types";
 import { PINNED_SECTION_ID, projectFromSectionId } from "./sections";
-import { bucketFromSectionId, canFileInto, type StatusBucket } from "./status";
+import {
+  bucketFromSectionId,
+  canFileInto,
+  isFinished,
+  type StatusBucket,
+} from "./status";
 
 /** Minimum vertical travel before a press becomes a reorder. */
 export const ENGAGE_PX = 6;
@@ -141,12 +146,15 @@ export function resolveDrop(
 
   const wasPinned = source.sectionId === PINNED_SECTION_ID;
   if (zone.sectionId === PINNED_SECTION_ID) {
+    // A finished thread is never shown pinned, so pinning one reopens it;
+    // otherwise it would be pinned and stay exactly where it was.
+    const from = bucketFromSectionId(source.sectionId);
     return {
       sectionId: PINNED_SECTION_ID,
       anchorRefId,
       reorder: false,
       pin: true,
-      bucket: null,
+      bucket: from !== null && isFinished(from) ? "in-progress" : null,
     };
   }
 

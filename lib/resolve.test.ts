@@ -490,6 +490,25 @@ describe("buildSections", () => {
     expect(sections[2]!.roots.map((root) => root.thread.id)).toEqual(["shipped"]);
   });
 
+  it("files a finished pinned thread with the rest of its bucket, not in Pinned", () => {
+    const tree = run([
+      thread({ id: "focus", projectId: "p1", isPinned: true }),
+      thread({ id: "shipped", projectId: "p1", isPinned: true }),
+      thread({ id: "shelved", projectId: "p1", isPinned: true }),
+    ]);
+    const bucketOf = bucketed({ shipped: "done", shelved: "backlog" });
+    const ids = (sections: { id: string; roots: { thread: { id: string } }[] }[], id: string) =>
+      sections.find((section) => section.id === id)?.roots.map((root) => root.thread.id);
+
+    const byProject = buildSections({ tree, groupBy: "project", projectIds: [], bucketOf });
+    expect(ids(byProject, "pinned")).toEqual(["focus", "shelved"]);
+    expect(ids(byProject, "status:done")).toEqual(["shipped"]);
+
+    const byStatus = buildSections({ tree, groupBy: "status", projectIds: [], bucketOf });
+    expect(ids(byStatus, "pinned")).toEqual(["focus", "shelved"]);
+    expect(ids(byStatus, "status:done")).toEqual(["shipped"]);
+  });
+
   // Without this a thread could not be sent to Backlog in the project view
   // until something was already there — the same trap Pinned avoids above.
   it("raises the empty parked piles during a drag, so each one can take a drop", () => {

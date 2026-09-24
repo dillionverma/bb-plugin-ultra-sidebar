@@ -16,6 +16,7 @@ import {
   PARKED_BUCKETS,
   STATUS_BUCKETS,
   STATUS_LABEL,
+  isFinished,
   statusSectionId,
   type StatusBucket,
 } from "./status";
@@ -73,6 +74,11 @@ export interface SectionsInput {
  * Pinned first, always. Then the rows however the user asked for them, with
  * Done, Backlog and Canceled trailing in the project view so finished work
  * stops crowding the project it came from.
+ *
+ * A pinned thread that is finished — merged, or filed Done or Canceled
+ * somewhere that could not also unpin it — is filed with the rest of its
+ * bucket rather than holding the top of the list. The pin itself is left
+ * alone, so reopening the thread puts it straight back.
  */
 export function buildSections(input: SectionsInput): Section[] {
   const { tree, groupBy, projectIds, bucketOf, dragging = false } = input;
@@ -80,7 +86,12 @@ export function buildSections(input: SectionsInput): Section[] {
   const keep = (node: ThreadNode) =>
     wanted.size === 0 || wanted.has(node.thread.projectId);
 
-  const pinnedRoots = tree.pinned.filter(keep);
+  const pinnedRoots: ThreadNode[] = [];
+  const finishedPins: ThreadNode[] = [];
+  for (const node of tree.pinned.filter(keep)) {
+    if (isFinished(bucketOf(node))) finishedPins.push(node);
+    else pinnedRoots.push(node);
+  }
   const sections: Section[] = [];
   if (pinnedRoots.length > 0 || dragging) {
     sections.push({
@@ -106,6 +117,7 @@ export function buildSections(input: SectionsInput): Section[] {
     for (const group of groups) {
       for (const node of group.roots) push(byBucket, bucketOf(node), node);
     }
+    for (const node of finishedPins) push(byBucket, bucketOf(node), node);
     // All five, in a fixed order, even when empty: the list is the workflow,
     // and a bucket that only appears once something lands in it reads as the
     // sidebar reshuffling itself.
@@ -134,6 +146,7 @@ export function buildSections(input: SectionsInput): Section[] {
     });
     sections.push(projectSection(group, active));
   }
+  for (const node of finishedPins) push(parked, bucketOf(node), node);
 
   // An empty pile stays off the list, except during a drag, when it is the
   // only place a thread can be filed — the same reason Pinned stays up.

@@ -67,7 +67,12 @@ import { SidebarDock } from "./SidebarDock";
 import { SidebarSection } from "./SidebarSection";
 import { ScrollContainerProvider } from "./scroll-container";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { isManualStatus, statusBucket, type ManualStatus } from "@/lib/status";
+import {
+  isFinished,
+  isManualStatus,
+  statusBucket,
+  type ManualStatus,
+} from "@/lib/status";
 import { revealPaths } from "@/lib/reveal-path";
 
 function SidebarBody(props: PluginThreadListProps) {
@@ -503,7 +508,15 @@ function SidebarBody(props: PluginThreadListProps) {
         threadActions.open(threadId, { split });
         onNavigate();
       },
-      setPinned,
+      setPinned: (threadId: string, pinned: boolean) => {
+        setPinned(threadId, pinned);
+        // A finished thread is never shown pinned (see buildSections), so
+        // pinning one reopens it rather than leaving it where it was.
+        const manual = manualStatusById.get(threadId);
+        if (pinned && manual !== undefined && isFinished(manual)) {
+          store.setStatus([threadId], null);
+        }
+      },
       setRead: (threadId, read) => void threadActions.setRead(threadId, read),
       renameThread: (threadId, title) => {
         void store.history.enqueue(async () => {
@@ -569,8 +582,18 @@ function SidebarBody(props: PluginThreadListProps) {
       setSubtreeExpanded: expandedSubtrees.set,
       manualStatusOf: (threadId: string) =>
         manualStatusById.get(threadId) ?? null,
-      setStatus: (threadId: string, status: ManualStatus | null) =>
-        store.setStatus([threadId], status),
+      setStatus: (threadId: string, status: ManualStatus | null) => {
+        store.setStatus([threadId], status);
+        // Filing a pinned thread away unpins it, exactly as dragging it onto
+        // a parked heading does: a pin says "this is what I'm on", and a
+        // finished thread holding the top of the list says the opposite.
+        if (
+          status !== null &&
+          treeRef.current.pinned.some((node) => node.thread.id === threadId)
+        ) {
+          setPinned(threadId, false);
+        }
+      },
       setSnoozed: store.setSnoozed,
       isSectionCollapsed: collapsedSections.has,
       toggleSection: collapsedSections.toggle,
