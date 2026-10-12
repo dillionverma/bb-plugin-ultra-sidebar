@@ -217,7 +217,6 @@ export const ThreadRow = memo(function ThreadRow({
 
   const compact = sidebar.compactRows;
   const [handoffOpen, setHandoffOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [modeDetailsOpen, setModeDetailsOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -262,9 +261,6 @@ export const ThreadRow = memo(function ThreadRow({
   // menu — autoFocus there loses the race with Radix restoring focus to the
   // trigger, which blurs the field straight back out of edit mode.
   const isRenaming = draftTitle !== null;
-  useEffect(() => {
-    if (isRenaming || isDragActive) setDetailsOpen(false);
-  }, [isRenaming, isDragActive]);
   useEffect(() => {
     if (!isRenaming) return;
     const frame = requestAnimationFrame(() => {
@@ -485,7 +481,7 @@ export const ThreadRow = memo(function ThreadRow({
           style={{ paddingLeft: `${ROW_BASE_PAD_PX + indent}px` }}
         >
           <RowHover
-            enabled={draftTitle === null && !isDragActive && !detailsOpen && !handoffOpen && !modeDetailsOpen && !selection.active}
+            enabled={draftTitle === null && !isDragActive && !handoffOpen && !modeDetailsOpen && !selection.active}
             onWarm={() => prefetchPullRequestStack(thread.id)}
             details={threadDetails}
           >
@@ -669,15 +665,7 @@ export const ThreadRow = memo(function ThreadRow({
                       </span>
                     </RowTip>
                   )}
-                  <MachineIndicator
-                    name={machine}
-                    threadTitle={title}
-                    open={detailsOpen}
-                    onOpenChange={setDetailsOpen}
-                    onWarm={() => prefetchPullRequestStack(thread.id)}
-                  >
-                    {threadDetails}
-                  </MachineIndicator>
+                  <MachineIndicator name={machine} />
                 </span>
                 {!needsInput && (needsAttention || showRowStatus) ? (
                   <span className="min-w-0 max-w-full">

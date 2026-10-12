@@ -1013,7 +1013,7 @@ describe("ultra sidebar thread list", () => {
     await slot.findByText("Alpha");
 
     expect(await slot.findByText("feat/sidebar")).toBeTruthy();
-    expect(slot.getByRole("button", { name: /Machine: studio-mbp\. Details for/ })).toBeTruthy();
+    expect(slot.getByLabelText("Machine: studio-mbp")).toBeTruthy();
     // The raw id is unreadable in a sidebar; the badge shows the family.
     expect(await slot.findByText("opus-5")).toBeTruthy();
   });
@@ -1637,7 +1637,7 @@ describe("project context and change counts", () => {
 
 
 describe("thread summary actions", () => {
-  it.each([false, true])("opens mode and machine details with model names hidden in rows, compact=%s", async compact => {
+  it.each([false, true])("opens mode details and keeps machines passive with model names hidden in rows, compact=%s", async compact => {
     window.localStorage.setItem("bb-workspace-sidebar:row-details:v1", JSON.stringify({ model: false }));
     const readPlan = vi.fn(() => ({ plan: { mode: "plan", prompt: "Compare upgrade options before implementing.", providerId: "claude-code" } }));
     const readExecution = vi.fn(() => ({ entries: [{ threadId: "planning", model: "gpt-6-astra", reasoningLevel: "medium", permissionMode: "auto", serviceTier: null }] }));
@@ -1648,7 +1648,7 @@ describe("thread summary actions", () => {
     })], rpc: { "threads.plan": readPlan, "threads.execution": readExecution } });
     const row = slot.container.querySelector('[data-sidebar-thread-id="planning"]') as HTMLElement;
     const project = within(row).getByText("Alpha");
-    const machine = within(row).getByRole("button", { name: "Machine: mbp. Details for planning" });
+    const machine = within(row).getByLabelText("Machine: mbp");
     expect(machine.closest("[data-thread-context]")).toBe(project.closest("[data-thread-context]"));
     expect(machine.closest("[data-thread-summary]")).not.toBeNull();
     expect(machine.closest(".bb-ws-mainline")).toBeNull();
@@ -1663,9 +1663,10 @@ describe("thread summary actions", () => {
     fireEvent.keyDown(plan, { key: "Escape" });
     await waitFor(() => expect(plan.getAttribute("aria-expanded")).toBe("false"));
     fireEvent.click(machine);
-    expect(await slot.findByRole("heading", { name: "planning" })).toBeTruthy();
-    expect(await slot.findByText("Details")).toBeTruthy();
-    expect(machine.getAttribute("aria-expanded")).toBe("true");
+    expect(slot.queryByRole("heading", { name: "planning" })).toBeNull();
+    expect(machine.tagName).toBe("SPAN");
+    expect(machine.getAttribute("aria-expanded")).toBeNull();
+    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
   });
 });
 

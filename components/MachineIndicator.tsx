@@ -1,13 +1,10 @@
-import { useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ComputerIcon,
   ComputerTerminal01Icon,
-  InformationCircleIcon,
   LaptopIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Recognize explicit device names; arbitrary host names keep a generic glyph. */
@@ -32,83 +29,25 @@ export function MachineIcon({ name, className }: { name: string; className?: str
   );
 }
 
-/** A small device icon beside project context, with keyboard/touch access to details. */
-export function MachineIndicator({
-  name,
-  threadTitle,
-  open,
-  onOpenChange,
-  onWarm,
-  children,
-}: {
-  name: string | null;
-  threadTitle: string;
-  open: boolean;
-  onOpenChange(open: boolean): void;
-  onWarm(): void;
-  children: ReactNode;
-}) {
-  // The tooltip yields to the popover: once details are open the hover word
-  // would sit on top of the very card that explains it.
-  const [tipOpen, setTipOpen] = useState(false);
-  const tip = name === null ? "Thread details" : `Machine · ${name}`;
+export function MachineIndicator({ name }: { name: string | null }) {
+  if (name === null) return null;
   return (
-    <span
-      className="flex shrink-0"
-      // Portal events follow the React tree, including the mobile sheet's
-      // backdrop and handle. None of them should activate or drag the row.
-      onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-          event.stopPropagation();
-        }
-      }}
-      onContextMenu={(event) => event.stopPropagation()}
-    >
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <Tooltip open={tipOpen && !open} onOpenChange={setTipOpen}>
+    <Tooltip>
       <TooltipTrigger asChild>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={name === null ? `Details for ${threadTitle}` : `Machine: ${name}. Details for ${threadTitle}`}
-          onPointerEnter={onWarm}
-          onFocus={onWarm}
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          // Do not preventDefault: the popover trigger still needs to toggle.
-          onClick={(event) => event.stopPropagation()}
-          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:size-11"
+        <span
+          aria-label={`Machine: ${name}`}
+          data-machine-indicator=""
+          data-no-drag=""
+          onPointerDown={event => event.stopPropagation()}
+          onMouseDown={event => event.stopPropagation()}
+          onClick={event => { event.preventDefault(); event.stopPropagation(); }}
+          onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); }}
+          className="flex size-5 shrink-0 cursor-default items-center justify-center rounded text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
         >
-          {name === null ? <HugeiconsIcon icon={InformationCircleIcon} aria-hidden className="size-3" /> : <MachineIcon name={name} className="size-3" />}
-        </button>
-      </PopoverTrigger>
+          <MachineIcon name={name} className="size-3" />
+        </span>
       </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6}>
-        {tip}
-      </TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={8}
-        collisionPadding={12}
-        className="w-auto max-w-[calc(100vw-1.5rem)] p-3"
-        mobileTitle="Thread details"
-        onClick={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-      >
-        {children}
-      </PopoverContent>
-    </Popover>
-    </span>
+      <TooltipContent side="top" sideOffset={6}>Machine · {name}</TooltipContent>
+    </Tooltip>
   );
 }
