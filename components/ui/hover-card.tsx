@@ -8,12 +8,6 @@ const HoverCard = HoverCardPrimitive.Root;
 
 const HoverCardTrigger = HoverCardPrimitive.Trigger;
 
-// Portalled, like the popover and context menu. Rendered inline, the card
-// sits inside the row's <li>, whose `content-visibility: auto` gives it layout
-// containment — and a contained element is the containing block for anything
-// `position: fixed` inside it. The popper then lands offset by the row's own
-// position, usually below the viewport, and nothing appears on hover. The
-// scope props let bb's theme reach the card once it lives under <body>.
 const HoverCardContent = React.forwardRef<
   React.ElementRef<typeof HoverCardPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof HoverCardPrimitive.Content>

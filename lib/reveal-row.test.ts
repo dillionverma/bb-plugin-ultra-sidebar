@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
-import { findThreadRow, isFullyVisible, revealRow } from "./reveal-row";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { revealRow } from "./reveal-row";
 
 function rect(top: number, bottom: number): DOMRect {
-  return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON() {} } as DOMRect;
+  return new DOMRect(0, top, 0, bottom - top);
 }
 
 function scrollerAt(top: number, bottom: number): HTMLElement {
@@ -13,124 +13,90 @@ function scrollerAt(top: number, bottom: number): HTMLElement {
   return scroller;
 }
 
-function rowAt(list: HTMLElement, threadId: string, top: number, bottom: number) {
+function rowAt(scroller: HTMLElement, threadId: string, top: number, bottom: number) {
   const row = document.createElement("a");
   row.setAttribute("data-sidebar-thread-id", threadId);
   row.getBoundingClientRect = () => rect(top, bottom);
   row.scrollIntoView = vi.fn();
-  list.append(row);
+  scroller.append(row);
   return row;
 }
 
-function scheduler() {
-  const queue: Array<{ handle: number; callback: () => void }> = [];
-  let next = 1;
-  return {
-    schedule: (callback: () => void) => {
-      const handle = next++;
-      queue.push({ handle, callback });
-      return handle;
-    },
-    cancel: (handle: number) => {
-      const index = queue.findIndex((entry) => entry.handle === handle);
-      if (index !== -1) queue.splice(index, 1);
-    },
-    flush() {
-      const pending = queue.splice(0);
-      for (const entry of pending) entry.callback();
-    },
-    get pending() {
-      return queue.length;
-    },
-  };
-}
-
 describe("reveal row", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it("leaves a fully visible row alone", () => {
     const scroller = scrollerAt(0, 500);
-    const list = document.createElement("ul");
-    const row = rowAt(list, "thr_a", 100, 140);
-    const scrollToIndex = vi.fn();
+    const row = rowAt(scroller, "thr_a", 100, 140);
 
-    revealRow({ getScroller: () => scroller, getList: () => list, threadId: "thr_a", rootIndex: 3, scrollToIndex });
+    revealRow(scroller, "thr_a");
 
     expect(row.scrollIntoView).not.toHaveBeenCalled();
-    expect(scrollToIndex).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("centers a mounted row that is partly off-screen", () => {
     const scroller = scrollerAt(0, 500);
-    const list = document.createElement("ul");
-    const row = rowAt(list, "thr_a", 480, 520);
+    const row = rowAt(scroller, "thr_a", 480, 520);
 
-    revealRow({ getScroller: () => scroller, getList: () => list, threadId: "thr_a", rootIndex: 0, scrollToIndex: vi.fn() });
+    revealRow(scroller, "thr_a");
 
     expect(row.scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("scrolls a windowed list to the root index, then centers the row once it mounts", () => {
+  it("waits for a descendant to mount after its ancestor chain opens", () => {
     const scroller = scrollerAt(0, 500);
-    const list = document.createElement("ul");
-    const scrollToIndex = vi.fn();
-    const frames = scheduler();
 
-    revealRow({
-      getScroller: () => scroller,
-      getList: () => list,
-      threadId: "thr_child",
-      rootIndex: 42,
-      scrollToIndex,
-      schedule: frames.schedule,
-      cancel: frames.cancel,
-    });
+    revealRow(scroller, "thr_child");
 
-    expect(scrollToIndex).toHaveBeenCalledWith(42);
-    frames.flush();
-    expect(frames.pending).toBe(1);
-    const row = rowAt(list, "thr_child", -30, 10);
-    frames.flush();
+    vi.advanceTimersToNextFrame();
+    expect(vi.getTimerCount()).toBe(1);
+    const row = rowAt(scroller, "thr_child", -30, 10);
+    vi.advanceTimersToNextFrame();
     expect(row.scrollIntoView).toHaveBeenCalledWith({ block: "center" });
-    expect(frames.pending).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("gives up after the configured number of frames and can be cancelled", () => {
+  it("stops retrying after eight frames", () => {
     const scroller = scrollerAt(0, 500);
-    const list = document.createElement("ul");
-    const frames = scheduler();
-    const args = {
-      getScroller: () => scroller,
-      getList: () => list,
-      threadId: "thr_missing",
-      rootIndex: 1,
-      scrollToIndex: vi.fn(),
-      schedule: frames.schedule,
-      cancel: frames.cancel,
-      attempts: 2,
-    };
+    const query = vi.spyOn(scroller, "querySelector");
 
-    revealRow(args);
-    frames.flush();
-    frames.flush();
-    expect(frames.pending).toBe(0);
+    revealRow(scroller, "thr_missing");
+    for (let frame = 0; frame < 8; frame += 1) vi.advanceTimersToNextFrame();
 
-    const cancel = revealRow(args);
-    expect(frames.pending).toBe(1);
-    cancel();
-    expect(frames.pending).toBe(0);
+    expect(query).toHaveBeenCalledTimes(9);
+    expect(vi.getTimerCount()).toBe(0);
+    const row = rowAt(scroller, "thr_missing", -30, 10);
+    vi.advanceTimersToNextFrame();
+    expect(row.scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it("does nothing without a scroll area", () => {
-    const scrollToIndex = vi.fn();
-    revealRow({ getScroller: () => null, getList: () => null, threadId: "thr_a", rootIndex: 0, scrollToIndex });
-    expect(scrollToIndex).not.toHaveBeenCalled();
+  it("cancels a pending reveal when navigation changes", () => {
+    const scroller = scrollerAt(0, 500);
+    const cancel = revealRow(scroller, "thr_child");
+    vi.advanceTimersToNextFrame();
+
+    cancel?.();
+    const row = rowAt(scroller, "thr_child", -30, 10);
+    vi.advanceTimersToNextFrame();
+
+    expect(row.scrollIntoView).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("finds rows by escaped thread id and measures visibility against the scroller", () => {
-    const list = document.createElement("ul");
-    const row = rowAt(list, 'thr_"quoted"', 0, 10);
-    expect(findThreadRow(list, 'thr_"quoted"')).toBe(row);
-    expect(findThreadRow(list, "thr_other")).toBeNull();
-    expect(isFullyVisible(row, scrollerAt(0, 10))).toBe(true);
-    expect(isFullyVisible(row, scrollerAt(5, 100))).toBe(false);
+  it("reveals only the matching escaped thread id", () => {
+    const scroller = scrollerAt(0, 500);
+    const other = rowAt(scroller, "thr_other", -30, 10);
+    const row = rowAt(scroller, 'thr_"quoted"\\path', -30, 10);
+
+    revealRow(scroller, 'thr_"quoted"\\path');
+
+    expect(row.scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    expect(other.scrollIntoView).not.toHaveBeenCalled();
   });
 });

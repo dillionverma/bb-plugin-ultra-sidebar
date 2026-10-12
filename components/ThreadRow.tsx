@@ -396,15 +396,6 @@ export const ThreadRow = memo(function ThreadRow({
   return (
     <div
       className="relative group/selection-row flex items-start"
-      style={{
-        contentVisibility: "auto",
-        // Deliberately a fixed length, not `auto <length>`. `auto` remembers
-        // the size the row last rendered at, and a row remembered at its
-        // one-line height keeps claiming it after it grows a second line —
-        // which the windowed list reads through this row's `li` and turns
-        // into rows drawn on top of each other.
-        containIntrinsicSize: compact ? "32px" : "44px",
-      }}
     >
       {isRoot ? <RowDropDecor kind="thread" refId={thread.id} /> : null}
       {draftTitle === null && selection.active && (

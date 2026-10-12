@@ -69,13 +69,6 @@
   transform-origin: left center;
   animation: bb-ws-row-leave 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
-/* Windowed rows are placed by transform, so closing the gap is a transform
-   change. The transition is only on while the list is actually settling: left
-   standing it would also animate a section above collapsing, which moves
-   every row below it the height of that section at once. */
-.bb-ws-rows-settling > li { transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1); }
-
 @media (prefers-reduced-motion: reduce) {
   .bb-ws-row-leaving { animation-duration: 1ms; }
-  .bb-ws-rows-settling > li { transition: none; }
 }

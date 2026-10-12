@@ -14,10 +14,8 @@ import type { ExecutionMap } from "@/hooks/useThreadExecution";
 import type { PullRequestMap } from "@/hooks/useThreadPullRequests";
 import { guardHandle } from "@/hooks/useSidebarDnd";
 import { sectionKey, sortableId, type DndData, type DropZone } from "@/lib/dnd";
-import { containsThread } from "@/lib/contains-thread";
-import { revealRow } from "@/lib/reveal-row";
+import { SECTION_PREVIEW_SIZE } from "@/lib/section-preview";
 import { useSidebar } from "./sidebar-context";
-import { useWindowedRows } from "./scroll-container";
 import { ThreadRow } from "./ThreadRow";
 import { ProjectIcon } from "./ProjectIcon";
 import { SectionContextMenu } from "./RowContextMenu";
@@ -32,19 +30,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-/**
- * Rows keep sliding into place when the list changes under them — a thread
- * bumps to the top, a mark-done removes one — not only while a drag is on.
- * That is `useRowExit` below, which slides the windowed `li` itself.
- *
- * It used to be dnd-kit's layout animation, forced on outside a drag with
- * `wasDragging: true`. That never worked: dnd-kit measures droppable rects
- * only while dragging, so the FLIP it computes on a quiet list is against a
- * rect frozen at the last drop — a row that changed index would jump in from
- * wherever it happened to be during that drag. Left at dnd-kit's default, the
- * animation runs only when the rects behind it are fresh.
- */
 
 /**
  * One dnd-kit node: a row or section that can be picked up, landed on, or
@@ -137,23 +122,6 @@ function SubtreeChildren({
   );
 }
 
-/** Where a windowed row sits, and how the window learns its real height. */
-interface VirtualSlot {
-  index: number;
-  /** Distance from the top of the list, in px. */
-  offset: number;
-  measure: (element: HTMLElement | null) => void;
-}
-
-/**
- * A root thread and its subagent descendants, as one sortable node: a
- * subtree always moves with its root, so the root's node is what dnd-kit
- * slides around, children and all.
- *
- * In a windowed list the `li` is placed by the window and the sortable node
- * is the div inside it, so the two transforms — the window's placement and
- * dnd-kit's slide — never fight over one element.
- */
 function RootSubtree({
   node,
   sectionId,
@@ -161,9 +129,8 @@ function RootSubtree({
   executions,
   pullRequests,
   sectionLabel = null,
-  virtual,
   leaving = false,
-}: SubtreeProps & { virtual?: VirtualSlot; leaving?: boolean }) {
+}: SubtreeProps & { leaving?: boolean }) {
   const sidebar = useSidebar();
   const expanded = sidebar.isSubtreeExpanded(node.thread.id);
   const { setNodeRef, style, handle, isDragging } = useSortableZone(
@@ -197,10 +164,6 @@ function RootSubtree({
       ) : null}
     </>
   );
-  // The fade goes on a wrapper of its own rather than on the `li` or the
-  // sortable node: both of those carry a transform already — the window's
-  // placement and dnd-kit's slide — and a keyframe that animates transform
-  // would throw the row back to the top of the list as it faded.
   const content = leaving ? (
     <div aria-hidden className="bb-ws-row-leaving">
       {subtree}
@@ -208,43 +171,19 @@ function RootSubtree({
   ) : (
     subtree
   );
-  if (virtual === undefined) {
-    return (
-      <li
-        ref={setNodeRef}
-        style={style}
-        className={cn("relative", isDragging && "z-10 opacity-60")}
-      >
-        {content}
-      </li>
-    );
-  }
   return (
     <li
-      ref={virtual.measure}
-      data-index={virtual.index}
-      className="absolute left-0 top-0 w-full"
-      style={{ transform: `translateY(${virtual.offset}px)` }}
+      ref={setNodeRef}
+      style={style}
+      className={cn("relative", isDragging && "z-10 opacity-60")}
     >
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={cn("relative", isDragging && "z-10 opacity-60")}
-      >
-        {content}
-      </div>
+      {content}
     </li>
   );
 }
 
-/** Estimated row height before a row has been measured, by row layout. */
-const ROW_ESTIMATE_PX = { compact: 32, detailed: 44 } as const;
-
 /** How long a row that left the list stays mounted, fading out in its slot. */
 const ROW_EXIT_MS = 150;
-
-/** How long the rows under it then take to close the gap. */
-const ROW_SETTLE_MS = 200;
 
 /** A row the list no longer has, still on screen while it fades. */
 interface LeavingRow {
@@ -258,8 +197,6 @@ interface RowExit {
   rows: readonly ThreadNode[];
   /** Which of them are ghosts. */
   leaving: ReadonlySet<string>;
-  /** True while the rows are moving, so the slide is worth transitioning. */
-  settling: boolean;
 }
 
 /**
@@ -269,8 +206,7 @@ interface RowExit {
  * Marking a thread done files it in another section, so it vanishes from this
  * one the instant the edit lands. Without this the row is simply absent
  * between two frames and everything under it jumps a row height at once —
- * which reads as the sidebar glitching rather than as the thread leaving. The
- * ghost holds the slot while it fades, and only then does the list settle.
+ * which reads as the sidebar glitching rather than as the thread leaving.
  *
  * Only a hand-filed thread gets one. A row can leave a group for reasons that
  * are not the thread going anywhere — a filter narrowing, a grouping change,
@@ -288,9 +224,7 @@ function useRowExit(
   const [state, setState] = useState<{
     source: readonly ThreadNode[];
     leaving: readonly LeavingRow[];
-    /** Bumped every time the rows moved; each bump extends the slide. */
-    settle: number;
-  }>({ source: roots, leaving: [], settle: 0 });
+  }>({ source: roots, leaving: [] });
 
   // Derived during render, not in an effect: the ghost has to be in the very
   // commit that dropped the row, or the gap is visible for a frame first.
@@ -309,45 +243,23 @@ function useRowExit(
         gone.push({ node, index });
       });
     }
-    const moved =
-      state.source.length !== roots.length ||
-      state.source.some((node, i) => node.thread.id !== roots[i]?.thread.id);
-    setState({
-      source: roots,
-      leaving: [...kept, ...gone],
-      settle: moved && !suspended ? state.settle + 1 : state.settle,
-    });
+    setState({ source: roots, leaving: [...kept, ...gone] });
   }
 
-  const { leaving, settle } = state;
-  // Drop the ghosts once they have faded, and let that drop slide too.
+  const { leaving } = state;
   useEffect(() => {
     if (leaving.length === 0) return;
     const timer = setTimeout(
       () =>
         setState((prev) =>
           prev.leaving === leaving
-            ? { ...prev, leaving: [], settle: prev.settle + 1 }
+            ? { ...prev, leaving: [] }
             : prev,
         ),
       ROW_EXIT_MS,
     );
     return () => clearTimeout(timer);
   }, [leaving]);
-
-  // Transitions stay off between moves: the rows are placed by transform, and
-  // a standing transition would also animate a section above collapsing.
-  useEffect(() => {
-    if (settle === 0) return;
-    const timer = setTimeout(
-      () =>
-        setState((prev) =>
-          prev.settle === settle ? { ...prev, settle: 0 } : prev,
-        ),
-      ROW_EXIT_MS + ROW_SETTLE_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [settle]);
 
   const rows = useMemo(() => {
     if (leaving.length === 0) return roots;
@@ -361,123 +273,45 @@ function useRowExit(
     () => new Set(leaving.map((row) => row.node.thread.id)),
     [leaving],
   );
-  return { rows, leaving: leavingIds, settling: settle > 0 };
+  return { rows, leaving: leavingIds };
 }
 
-/**
- * A group's root rows, windowed: only the rows near the viewport are in the
- * DOM, the list reserves the height of the rest. Without a scroll area to
- * window against (jsdom, an unexpected host) every row renders in flow.
- */
 function GroupRows({
+  section,
   roots,
-  sectionId,
-  showProject,
   executions,
   pullRequests,
-  sectionLabel,
-  className,
 }: {
+  section: Section;
   roots: readonly ThreadNode[];
-  sectionId: string;
-  showProject: boolean;
   executions: ExecutionMap;
   pullRequests: PullRequestMap;
-  sectionLabel: string | null;
-  className?: string;
 }) {
   const sidebar = useSidebar();
-  const estimate = sidebar.compactRows
-    ? ROW_ESTIMATE_PX.compact
-    : ROW_ESTIMATE_PX.detailed;
-  const isSubtreeExpanded = sidebar.isSubtreeExpanded;
+  const fullRootIds = useMemo(
+    () => new Set(section.roots.map(root => root.thread.id)),
+    [section.roots],
+  );
   // The thread is already filed by the time its row is dropped: the same
   // edit that set the status is what took it out of this group.
   const manualStatusOf = sidebar.manualStatusOf;
   const exit = useRowExit(roots, useDragActive(), (threadId) =>
-    manualStatusOf(threadId) !== null,
+    manualStatusOf(threadId) !== null && !fullRootIds.has(threadId),
   );
-  const windowed = useWindowedRows(exit.rows, {
-    keyOf: (node) => node.thread.id,
-    // One row's height, even for an expanded subtree. Scaling the estimate by
-    // the subtree's row count reserves closer to the truth on paper, but the
-    // estimate is a floor the list lays rows out against before it has
-    // measured them, and getting it wrong in either direction is what puts
-    // one row on top of the next. Measurement is what makes this accurate.
-    estimateSize: () => estimate,
-  });
-  // No cache-clearing on expand/collapse. Dropping every measured height on
-  // an expanded-set change looks like it would fix the stale height a
-  // collapsed-while-off-screen root keeps, but a still-mounted row only
-  // re-reports through its ResizeObserver, which does not fire when nothing
-  // resized — so the cleared rows fall back to the one-row estimate and the
-  // list draws them on top of each other. A row whose subtree actually opened
-  // or closed did change height, so the observer already corrects it.
-  // Bring the thread the user is looking at into view when it changed from
-  // somewhere other than a click on its row: Mod+[ / Mod+], the palette, a
-  // link. A row already on screen is left where it is.
-  const revealRef = useRef({ roots: exit.rows, windowed });
-  revealRef.current = { roots: exit.rows, windowed };
-  const activeThreadId = sidebar.activeThreadId;
-  useEffect(() => {
-    if (activeThreadId === null) return;
-    const { roots, windowed: current } = revealRef.current;
-    const rootIndex = roots.findIndex((root) => containsThread(root, activeThreadId));
-    if (rootIndex === -1) return;
-    return revealRow({
-      getScroller: () => revealRef.current.windowed.getScroller(),
-      getList: () => revealRef.current.windowed.getList(),
-      threadId: activeThreadId,
-      rootIndex,
-      scrollToIndex: current.scrollToIndex,
-    });
-    // Re-run when the expanded set changes: the reveal of a deep row races
-    // the ancestor chain opening, and revealRow gives up after 8 frames.
-  }, [activeThreadId, isSubtreeExpanded]);
-  if (!windowed.active) {
-    return (
-      <ul ref={windowed.listRef} className={className}>
-        {exit.rows.map((node) => (
-          <RootSubtree
-            key={node.thread.id}
-            node={node}
-            sectionId={sectionId}
-            showProject={showProject}
-            executions={executions}
-            pullRequests={pullRequests}
-            sectionLabel={sectionLabel}
-            leaving={exit.leaving.has(node.thread.id)}
-          />
-        ))}
-      </ul>
-    );
-  }
   return (
-    <ul
-      ref={windowed.listRef}
-      className={cn("relative", exit.settling && "bb-ws-rows-settling", className)}
-      style={{ height: windowed.totalSize }}
-    >
-      {windowed.items.map((item) => {
-        const node = windowed.rowAt(item);
-        return (
-          <RootSubtree
-            key={node.thread.id}
-            node={node}
-            sectionId={sectionId}
-            showProject={showProject}
-            executions={executions}
-            pullRequests={pullRequests}
-            sectionLabel={sectionLabel}
-            leaving={exit.leaving.has(node.thread.id)}
-            virtual={{
-              index: item.index,
-              offset: windowed.offsetOf(item),
-              measure: windowed.measure,
-            }}
-          />
-        );
-      })}
+    <ul>
+      {exit.rows.map((node) => (
+        <RootSubtree
+          key={node.thread.id}
+          node={node}
+          sectionId={section.id}
+          showProject={section.showProject}
+          executions={executions}
+          pullRequests={pullRequests}
+          sectionLabel={section.kind === "status" ? section.name : null}
+          leaving={exit.leaving.has(node.thread.id)}
+        />
+      ))}
     </ul>
   );
 }
@@ -547,17 +381,28 @@ function SectionGlyph({ section }: { section: Section }) {
  */
 export function SidebarSection({
   section,
+  previewRoots,
+  hasLoadedMore,
+  onLoadMore,
+  onShowLess,
   isCollapsed,
   onToggle,
   executions,
   pullRequests,
 }: {
   section: Section;
+  previewRoots: readonly ThreadNode[];
+  hasLoadedMore: boolean;
+  onLoadMore(): void;
+  onShowLess(): void;
   isCollapsed: boolean;
   onToggle(): void;
   executions: ExecutionMap;
   pullRequests: PullRequestMap;
 }) {
+  const headingButtonRef = useRef<HTMLButtonElement>(null);
+  const showLessButtonRef = useRef<HTMLButtonElement>(null);
+  const remaining = section.roots.length - previewRoots.length;
   const projectId = section.kind === "project" ? section.projectId : null;
   // The section is the wide target: a thread dropped anywhere inside it —
   // including on the heading — lands here. A project heading registers a
@@ -574,14 +419,14 @@ export function SidebarSection({
   });
   const threadIds = useMemo(
     () =>
-      section.roots.map((root) =>
+      previewRoots.map((root) =>
         sortableId({
           kind: "thread",
           refId: root.thread.id,
           sectionId: section.id,
         }),
       ),
-    [section.roots, section.id],
+    [previewRoots, section.id],
   );
 
   return (
@@ -606,6 +451,7 @@ export function SidebarSection({
             )}
           >
             <button
+              ref={headingButtonRef}
               type="button"
               onClick={onToggle}
               aria-expanded={!isCollapsed}
@@ -669,15 +515,40 @@ export function SidebarSection({
       ) : (
         <SortableContext items={threadIds} strategy={verticalListSortingStrategy}>
           <GroupRows
-            roots={section.roots}
-            sectionId={section.id}
-            showProject={section.showProject}
+            section={section}
+            roots={previewRoots}
             executions={executions}
             pullRequests={pullRequests}
-            sectionLabel={section.kind === "status" ? section.name : null}
           />
         </SortableContext>
       )}
+      {!isCollapsed && (remaining > 0 || hasLoadedMore) ? (
+        <div className="flex flex-wrap items-center gap-1 px-3 py-1 text-xs text-muted-foreground">
+          {remaining > 0 ? (
+            <button type="button" onClick={() => {
+              onLoadMore();
+              if (remaining <= SECTION_PREVIEW_SIZE) {
+                requestAnimationFrame(() => showLessButtonRef.current?.focus({ preventScroll: true }));
+              }
+            }}
+              aria-label={`Load ${Math.min(SECTION_PREVIEW_SIZE, remaining)} more threads in ${section.name}`}
+              className="rounded px-2 py-1.5 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Load {Math.min(SECTION_PREVIEW_SIZE, remaining)} more <span className="text-muted-foreground/70">· {remaining} remaining</span>
+            </button>
+          ) : null}
+          {hasLoadedMore ? (
+            <button ref={showLessButtonRef} type="button" aria-label={`Show fewer threads in ${section.name}`}
+              onClick={() => {
+                onShowLess();
+                headingButtonRef.current?.focus({ preventScroll: true });
+                headingButtonRef.current?.scrollIntoView?.({ block: "nearest" });
+              }}
+              className="rounded px-2 py-1.5 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Show less
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

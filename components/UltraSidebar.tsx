@@ -67,7 +67,6 @@ import {
 import { DragStateProvider } from "./drag-state-context";
 import { SidebarDock } from "./SidebarDock";
 import { SidebarSection } from "./SidebarSection";
-import { ScrollContainerProvider } from "./scroll-container";
 import { ErrorBoundary } from "./ErrorBoundary";
 import {
   isFinished,
@@ -76,6 +75,10 @@ import {
   type ManualStatus,
 } from "@/lib/status";
 import { revealPaths } from "@/lib/reveal-path";
+import { revealRow } from "@/lib/reveal-row";
+import { containsThread } from "@/lib/contains-thread";
+import { previewRoots, SECTION_PREVIEW_SIZE } from "@/lib/section-preview";
+import { useSectionPreviews } from "@/hooks/useSectionPreviews";
 
 function SidebarBody(props: PluginThreadListProps) {
   const { activeThreadId, onNavigate } = props;
@@ -104,9 +107,7 @@ function SidebarBody(props: PluginThreadListProps) {
   );
   const filters = useSidebarFilters();
   const [rowDetails, setRowDetail] = usePersistedDetails(ROW_DETAILS_KEY);
-  // The scroll area and its content, for the windowed row lists inside.
   const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
 
   // The clock the resolver compares snoozes against. It only moves when a
   // snooze is due to end, so a thread comes back at its wake time without the
@@ -178,6 +179,11 @@ function SidebarBody(props: PluginThreadListProps) {
   const knownProjectIds = new Set(host.projects.map(project => project.id));
   const projectIds = filters.projectIds.filter(id => knownProjectIds.has(id));
   const hasFilters = projectIds.length > 0;
+  const previews = useSectionPreviews(JSON.stringify([groupBy, projectIds, showArchived]));
+  const toggleSection = useCallback((sectionId: string) => {
+    previews.reset(sectionId);
+    collapsedSections.toggle(sectionId);
+  }, [previews.reset, collapsedSections.toggle]);
   const scheduledProjectIds = hasFilters ? projectIds : null;
   // Snoozed threads obey the same filter as the list they left.
   const snoozedEntries = tree.snoozed.filter(
@@ -250,6 +256,21 @@ function SidebarBody(props: PluginThreadListProps) {
     }
     if (open.length > 0) expandRef.current.addAll(open);
   }, [rootNodes, activeThreadId]);
+
+  const activeTargetExists = activeThreadId !== null &&
+    rootNodes.some(root => containsThread(root, activeThreadId));
+  const navigationReveal = useRef({ threadId: activeThreadId, revealed: false });
+  useEffect(() => {
+    if (navigationReveal.current.threadId !== activeThreadId) {
+      navigationReveal.current = { threadId: activeThreadId, revealed: false };
+    }
+    if (activeThreadId === null || host.status !== "ready" || store.isLoading ||
+      !activeTargetExists || navigationReveal.current.revealed) return;
+    const scroller = scrollRef.current;
+    if (scroller === null) return;
+    navigationReveal.current.revealed = true;
+    return revealRow(scroller, activeThreadId);
+  }, [activeThreadId, host.status, store.isLoading, activeTargetExists]);
 
   // The pull request decides which bucket a thread lands in, and a thread
   // has to be bucketed before anything decides whether it is on screen, so
@@ -465,6 +486,15 @@ function SidebarBody(props: PluginThreadListProps) {
   );
   sectionsRef.current = sections;
 
+  const previewSections = useMemo(() => sections.map(section => {
+    const limit = previews.limits.get(section.id) ?? SECTION_PREVIEW_SIZE;
+    return {
+      section,
+      roots: previewRoots({ roots: section.roots, limit, activeThreadId }),
+      hasLoadedMore: limit > SECTION_PREVIEW_SIZE,
+    };
+  }), [sections, previews.limits, activeThreadId]);
+
   // Only ask the server about rows that are actually on screen: a collapsed
   // section or subtree is unmounted, so it costs nothing.
   const visibleThreads = useMemo(() => {
@@ -476,13 +506,13 @@ function SidebarBody(props: PluginThreadListProps) {
         walk(node.children);
       }
     };
-    for (const section of sections) {
+    for (const { section, roots } of previewSections) {
       if (collapsedSections.has(section.id)) continue;
-      walk(section.roots);
+      walk(roots);
     }
     return collected;
   }, [
-    sections,
+    previewSections,
     // The set itself is a fresh object literal on every render, so depending
     // on it meant this memo never hit and the whole walk ran on every render.
     collapsedSections.has,
@@ -609,7 +639,7 @@ function SidebarBody(props: PluginThreadListProps) {
       },
       setSnoozed: store.setSnoozed,
       isSectionCollapsed: collapsedSections.has,
-      toggleSection: collapsedSections.toggle,
+      toggleSection,
     }),
     [
       activeThreadId,
@@ -631,7 +661,7 @@ function SidebarBody(props: PluginThreadListProps) {
       expandedSubtrees.toggle,
       expandedSubtrees.set,
       collapsedSections.has,
-      collapsedSections.toggle,
+      toggleSection,
     ],
   );
 
@@ -643,6 +673,7 @@ function SidebarBody(props: PluginThreadListProps) {
   // options popover: they carry the same two labels and the same two icons,
   // and today they do materially different things.
   const collapseAll = () => {
+    previews.resetAll();
     collapsedSections.replace(sections.map((section) => section.id));
     expandedSubtrees.replace([]);
     // Collapsing everything is a deliberate reset, so a later pending
@@ -693,10 +724,9 @@ function SidebarBody(props: PluginThreadListProps) {
               {/* bb keeps the New-thread button, the search action, the plugin nav
             rows and the footer; a replaced list owns the scroll area only, so
             our own controls belong at the top of it. */}
-              <ScrollContainerProvider scrollRef={scrollRef} contentRef={contentRef}>
               <div className="bb-ws-body flex min-h-0 flex-1 flex-col overflow-hidden">
               <div ref={scrollRef} className="bb-ws-scroll flex min-h-0 flex-1 flex-col overflow-x-clip overflow-y-auto px-1 pb-2">
-              <div ref={contentRef} className="bb-ws-content flex flex-col">
+              <div className="bb-ws-content flex flex-col">
                 <div className="bb-ws-toolbar sticky top-0 z-10 flex items-center gap-0.5 bg-sidebar px-1 py-1.5">
                       <SidebarFilters
                         projects={availableProjects}
@@ -751,14 +781,18 @@ function SidebarBody(props: PluginThreadListProps) {
                   items={sectionIds}
                   strategy={verticalListSortingStrategy}
                 >
-                  {sections.map((section) => (
+                  {previewSections.map(({ section, roots, hasLoadedMore }) => (
                     <SidebarSection
                       key={section.id}
                       section={section}
+                      previewRoots={roots}
+                      hasLoadedMore={hasLoadedMore}
+                      onLoadMore={() => previews.loadMore(section.id)}
+                      onShowLess={() => previews.reset(section.id)}
                       executions={executions}
                       pullRequests={pullRequests}
                       isCollapsed={collapsedSections.has(section.id)}
-                      onToggle={() => collapsedSections.toggle(section.id)}
+                      onToggle={() => toggleSection(section.id)}
                     />
                   ))}
                 </SortableContext>
@@ -773,7 +807,6 @@ function SidebarBody(props: PluginThreadListProps) {
               </div>
               <SidebarDock snoozed={snoozedEntries} projectIds={scheduledProjectIds} />
               </div>
-              </ScrollContainerProvider>
             </SidebarInteractions>
           </TooltipProvider>
         </DragStateProvider>

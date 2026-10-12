@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 
 // The orb paints on a canvas with requestAnimationFrame, matchMedia and
 // IntersectionObserver, none of which jsdom has. The mapping is covered in
@@ -19,6 +19,24 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { applyStateChange } from "./lib/history";
 import type { SidebarState } from "./lib/types";
+
+const liveHost = vi.hoisted(() => ({
+  enabled: false,
+  loading: false,
+  threads: new Array<PluginSidebarThread>(),
+}));
+vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@get-bb/plugin-sdk/app")>();
+  return {
+    ...actual,
+    experimental_useSidebarThreads: () => {
+      const host = actual.experimental_useSidebarThreads();
+      return liveHost.enabled
+        ? { ...host, status: liveHost.loading ? "loading" : "ready", threads: liveHost.threads }
+        : host;
+    },
+  };
+});
 
 function thread(
   overrides: Partial<PluginSidebarThread> & { id: string; projectId: string },
@@ -58,7 +76,11 @@ function thread(
 // the previous test's sidebar still on screen.
 afterEach(() => {
   cleanup();
+  liveHost.enabled = false;
+  liveHost.loading = false;
+  liveHost.threads = [];
   window.localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 /**
@@ -167,6 +189,7 @@ async function mount(options: {
   mobile?: boolean;
   onNavigate?: () => void;
   rpc?: Record<string, (input: unknown) => unknown>;
+  waitUntilReady?: boolean;
 }) {
   groupBy(options.mode ?? "project");
   if (options.compact) window.localStorage.setItem("bb-workspace-sidebar:compact-rows:v1", "true");
@@ -211,8 +234,21 @@ async function mount(options: {
   );
   // The toolbar only renders once the store has loaded, and unlike a
   // section heading it is there in every grouping mode.
-  await slot.findByLabelText("View options");
-  return slot;
+  if (options.waitUntilReady !== false) await slot.findByLabelText("View options");
+  const Component = registration.component;
+  return {
+    ...slot,
+    navigateTo: (activeThreadId: string) => slot.rerender(
+      <Component
+        activeThreadId={activeThreadId}
+        activeProjectId={null}
+        isCompactViewport={options.mobile ?? false}
+        onNavigate={options.onNavigate ?? (() => {})}
+        searchQuery=""
+        Original={() => <div data-testid="bb-original-list" />}
+      />,
+    ),
+  };
 }
 
 /**
@@ -231,6 +267,217 @@ function heading(
 }
 
 describe("ultra sidebar thread list", () => {
+  it("reveals a late host target once without recentering when its section is reopened", async () => {
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return DOMRect.fromRect({ y: this.classList.contains("bb-ws-scroll") ? 0 : -60, width: 260, height: this.classList.contains("bb-ws-scroll") ? 300 : 40 });
+    });
+    liveHost.enabled = true;
+    liveHost.loading = true;
+    try {
+      const slot = await mount({ activeThreadId: "late-child", threads: [], waitUntilReady: false });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      liveHost.loading = false;
+      await act(async () => slot.navigateTo("late-child"));
+      await slot.findByLabelText("View options");
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+      liveHost.threads = [
+        thread({ id: "late-root", projectId: "p1" }),
+        thread({ id: "late-child", projectId: "p1", parentThreadId: "late-root" }),
+      ];
+      await act(async () => slot.navigateTo("late-child"));
+      expect(await slot.findByText("late-child")).toBeTruthy();
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+      scrollIntoView.mockClear();
+      const alpha = heading(slot, "Alpha");
+      fireEvent.click(within(alpha).getByRole("button", { name: "Collapse Alpha" }));
+      fireEvent.click(within(alpha).getByRole("button", { name: "Expand Alpha" }));
+      expect(slot.getByText("late-child")).toBeTruthy();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      liveHost.threads = [];
+      await act(async () => slot.navigateTo("late-child"));
+      liveHost.threads = [thread({ id: "late-root", projectId: "p1" }), thread({ id: "late-child", projectId: "p1", parentThreadId: "late-root" })];
+      await act(async () => slot.navigateTo("late-child"));
+      expect(slot.getByText("late-child")).toBeTruthy();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      bounds.mockRestore();
+      if (originalScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", originalScrollIntoView);
+      else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
+  it("keeps sized previews in flow and scroll positions stable through scrolling and manual expansion", async () => {
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() { return this.classList.contains("bb-ws-scroll") ? 300 : 0; },
+    });
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return DOMRect.fromRect({ y: this.classList.contains("bb-ws-scroll") ? 0 : -60, width: 260, height: this.classList.contains("bb-ws-scroll") ? 300 : 40 });
+    });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      const roots = Array.from({ length: 619 }, (_, index) => thread({ id: `done-${index}`, projectId: "p1", createdAt: 619 - index }));
+      const descendants = [
+        thread({ id: "unrelated-child", projectId: "p1", parentThreadId: "done-1" }),
+        thread({ id: "deep-parent", projectId: "p1", parentThreadId: "done-618" }),
+        thread({ id: "deep-active", projectId: "p1", parentThreadId: "deep-parent" }),
+      ];
+      const slot = await mount({
+        activeThreadId: "done-0",
+        threads: [...roots, ...descendants],
+        sidebarState: { ...state, lifecycle: roots.map(root => ({ threadId: root.id, status: "done", snoozedUntil: null })) },
+      });
+      const scroller = slot.container.querySelector<HTMLElement>(".bb-ws-scroll");
+      if (scroller === null) throw new Error("Missing sidebar scroller");
+      expect(scroller.clientHeight).toBe(300);
+      const done = heading(slot, "Done");
+      const expectFlow = (count: number) => {
+        const rows = done.querySelectorAll("[data-sidebar-thread-depth='0']");
+        expect(rows).toHaveLength(count);
+        for (const row of Array.from(rows)) {
+          const item = row.closest("li");
+          const list = item?.parentElement;
+          if (item === null || list === null || list === undefined) throw new Error("Missing root list item");
+          expect(item.classList.contains("absolute")).toBe(false);
+          expect(item.style.transform).toBe("");
+          const wrapper = item.querySelector<HTMLElement>(".group\\/selection-row");
+          if (wrapper === null) throw new Error("Missing thread row wrapper");
+          expect(wrapper.style.contentVisibility).toBe("");
+          expect(wrapper.style.containIntrinsicSize).toBe("");
+          expect(list.style.height).toBe("");
+          expect(list.classList.contains("bb-ws-rows-settling")).toBe(false);
+        }
+      };
+      expectFlow(25);
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      scrollIntoView.mockClear();
+      for (const top of [600, 300, 900, 400]) {
+        scroller.scrollTop = top;
+        fireEvent.scroll(scroller);
+        expect(scroller.scrollTop).toBe(top);
+        expectFlow(25);
+      }
+      fireEvent.click(slot.getByRole("button", { name: "Expand subagents of done-1" }));
+      expect(await slot.findByText("unrelated-child")).toBeTruthy();
+      fireEvent.click(slot.getByRole("button", { name: "Collapse subagents of done-1" }));
+      expect(scroller.scrollTop).toBe(400);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      fireEvent.click(within(done).getByRole("button", { name: "Collapse Done" }));
+      fireEvent.click(within(done).getByRole("button", { name: "Expand Done" }));
+      expectFlow(25);
+      expect(scroller.scrollTop).toBe(400);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      fireEvent.click(within(done).getByRole("button", { name: "Load 25 more threads in Done" }));
+      expectFlow(50);
+      expect(scroller.scrollTop).toBe(400);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      await act(async () => slot.navigateTo("deep-active"));
+      const active = await slot.findByText("deep-active");
+      expect(active.closest("[data-sidebar-thread-id]")?.getAttribute("aria-current")).toBe("page");
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+      expectFlow(51);
+      expect(slot.queryByText("done-617")).toBeNull();
+    } finally {
+      cleanup();
+      bounds.mockRestore();
+      if (originalScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", originalScrollIntoView);
+      else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+    }
+  });
+
+  it("previews 25 of 619 Done roots, explicitly loads more, and resets on show-less or collapse", async () => {
+    const roots = Array.from({ length: 619 }, (_, index) => thread({
+      id: `done-${index}`, projectId: "p1", createdAt: 619 - index,
+      environment: { id: `env-${index}`, name: "checkout", branchName: null, providerId: null, workspaceDisplayKind: null },
+    }));
+    const lifecycle = roots.map(root => ({ threadId: root.id, status: "done" as const, snoozedUntil: null }));
+    const execution = vi.fn(() => ({ entries: [] }));
+    const diffs = vi.fn(() => ({ entries: [] }));
+    const slot = await mount({ threads: roots, sidebarState: { ...state, lifecycle }, rpc: { "threads.execution": execution, "threads.diffs": diffs } });
+    const done = heading(slot, "Done");
+    const rows = () => done.querySelectorAll("[data-sidebar-thread-id]");
+    expect(rows()).toHaveLength(25);
+    expect(within(done).getByText("619")).toBeTruthy();
+    expect(slot.queryByText("done-618")).toBeNull();
+    await waitFor(() => expect(execution).toHaveBeenCalledWith({ threadIds: roots.slice(0, 25).map(root => root.id) }));
+    await waitFor(() => expect(diffs).toHaveBeenCalledWith({ threads: roots.slice(0, 25).map(root => ({ threadId: root.id, environmentId: root.environment?.id })).sort((a, b) => a.threadId.localeCompare(b.threadId)) }));
+    const firstRow = slot.getByText("done-0").closest("[data-sidebar-thread-id]");
+    if (!(firstRow instanceof HTMLElement)) throw new Error("Missing first preview row");
+    firstRow.focus();
+    fireEvent.keyDown(firstRow, { key: "a", ctrlKey: true });
+    expect(done.querySelectorAll('[data-selected="true"]')).toHaveLength(25);
+    fireEvent.keyDown(firstRow, { key: "Escape" });
+    const load = within(done).getByRole("button", { name: "Load 25 more threads in Done" });
+    expect(load.textContent).toContain("594 remaining");
+    fireEvent.click(load);
+    expect(rows()).toHaveLength(50);
+    expect(load.textContent).toContain("569 remaining");
+    await waitFor(() => expect(execution).toHaveBeenCalledWith({ threadIds: roots.slice(25, 50).map(root => root.id) }));
+    fireEvent.click(within(done).getByRole("button", { name: "Show fewer threads in Done" }));
+    expect(rows()).toHaveLength(25);
+    expect(document.activeElement).toBe(within(done).getByRole("button", { name: "Collapse Done" }));
+    fireEvent.click(load);
+    expect(rows()).toHaveLength(50);
+    fireEvent.click(within(done).getByRole("button", { name: "Collapse Done" }));
+    expect(rows()).toHaveLength(0);
+    fireEvent.click(within(done).getByRole("button", { name: "Expand Done" }));
+    expect(rows()).toHaveLength(25);
+    expect(within(done).queryByRole("button", { name: "Show fewer threads in Done" })).toBeNull();
+  });
+
+  it("keeps a late active descendant discoverable without loading the preceding 600 roots", async () => {
+    const roots = Array.from({ length: 619 }, (_, index) => thread({ id: `done-${index}`, projectId: "p1", createdAt: 619 - index }));
+    const child = thread({ id: "palette-match", projectId: "p1", parentThreadId: "done-618", title: "Late search result" });
+    const slot = await mount({
+      activeThreadId: child.id, threads: [...roots, child],
+      sidebarState: { ...state, lifecycle: roots.map(root => ({ threadId: root.id, status: "done", snoozedUntil: null })) },
+    });
+    const done = heading(slot, "Done");
+    expect(done.querySelectorAll("[data-sidebar-thread-id]")).toHaveLength(27);
+    expect(slot.getByText("Late search result").closest("[data-sidebar-thread-id]")?.getAttribute("aria-current")).toBe("page");
+    expect(slot.queryByText("done-617")).toBeNull();
+    expect(Array.from(done.querySelectorAll("[data-sidebar-thread-depth='0']"), row => row.getAttribute("data-sidebar-thread-id"))).toEqual([...roots.slice(0, 25).map(root => root.id), "done-618"]);
+    expect(within(done).getByText("620")).toBeTruthy();
+  });
+
+  it("resets loaded previews when a project filter changes", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    Element.prototype.scrollIntoView = vi.fn();
+    try {
+    const roots = Array.from({ length: 60 }, (_, index) => thread({ id: `done-${index}`, projectId: index % 2 ? "p2" : "p1", createdAt: 60 - index }));
+    const slot = await mount({ threads: roots, sidebarState: { ...state, lifecycle: roots.map(root => ({ threadId: root.id, status: "done", snoozedUntil: null })) } });
+    fireEvent.click(slot.getByRole("button", { name: "Load 25 more threads in Done" }));
+    expect(heading(slot, "Done").querySelectorAll("[data-sidebar-thread-id]")).toHaveLength(50);
+    fireEvent.click(slot.getByRole("button", { name: "Filter by project: All projects" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Beta" }));
+    fireEvent.click(slot.getByRole("button", { name: "Done selecting projects" }));
+    expect(heading(slot, "Done").querySelectorAll("[data-sidebar-thread-id]")).toHaveLength(25);
+    expect(slot.getByRole("button", { name: "Load 5 more threads in Done" })).toBeTruthy();
+    expect(slot.queryByRole("button", { name: "Show fewer threads in Done" })).toBeNull();
+    const finalPage = slot.getByRole("button", { name: "Load 5 more threads in Done" });
+    finalPage.focus();
+    fireEvent.click(finalPage);
+    expect(heading(slot, "Done").querySelectorAll("[data-sidebar-thread-id]")).toHaveLength(30);
+    expect(slot.queryByRole("button", { name: "Load 5 more threads in Done" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(slot.getByRole("button", { name: "Show fewer threads in Done" })));
+    } finally {
+      if (originalScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", originalScrollIntoView);
+      else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
   it("uses the existing child-thread tree for workflow workers", async () => {
     const slot = await mount({
       threads: [thread({ id: "origin", projectId: "p1" }), thread({ id: "ordinary-child", projectId: "p1", parentThreadId: "origin" })],
