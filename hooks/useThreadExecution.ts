@@ -22,41 +22,40 @@ export interface ThreadExecution {
 export type ExecutionMap = ReadonlyMap<string, ThreadExecution>;
 
 const EMPTY: ExecutionMap = new Map();
+const BATCH_SIZE = 300;
 
 export function useThreadExecution(
-  threads: readonly PluginSidebarThread[],
+  threads: readonly Pick<PluginSidebarThread, "id" | "updatedAt">[],
   enabled: boolean,
 ): ExecutionMap {
   const rpc = useRpc<typeof rpcContract>();
   const [entries, setEntries] = useState<ExecutionMap>(EMPTY);
   // threadId -> the updatedAt the cached answer was fetched against.
   const fetchedAt = useRef(new Map<string, number>());
-  const inFlight = useRef(false);
 
   // A primitive key, so this effect fires on real change rather than on every
   // new array identity the host hands us.
-  const staleKey = threads
-    .filter((thread) => fetchedAt.current.get(thread.id) !== thread.updatedAt)
+  const targetKey = threads
     .map((thread) => `${thread.id}@${thread.updatedAt}`)
     .join(",");
 
   useEffect(() => {
-    if (!enabled || staleKey === "" || inFlight.current) return;
+    if (!enabled || targetKey === "") return;
 
-    const stale = staleKey.split(",").map((part) => {
+    const stale = targetKey.split(",").map((part) => {
       const at = part.lastIndexOf("@");
       return { id: part.slice(0, at), updatedAt: Number(part.slice(at + 1)) };
-    });
+    }).filter(item => fetchedAt.current.get(item.id) !== item.updatedAt);
 
     let cancelled = false;
-    inFlight.current = true;
-    rpc
-      .call("threads.execution", { threadIds: stale.map((item) => item.id) })
-      .then(
-        (result) => {
+    async function fetchExecution() {
+      for (let start = 0; start < stale.length && !cancelled; start += BATCH_SIZE) {
+        const batch = stale.slice(start, start + BATCH_SIZE);
+        try {
+          const result = await rpc.call("threads.execution", { threadIds: batch.map(item => item.id) });
           if (cancelled) return;
-          for (const item of stale) fetchedAt.current.set(item.id, item.updatedAt);
-          setEntries((current) => {
+          for (const item of batch) fetchedAt.current.set(item.id, item.updatedAt);
+          setEntries(current => {
             const next = new Map(current);
             for (const entry of result.entries) {
               next.set(entry.threadId, {
@@ -68,22 +67,18 @@ export function useThreadExecution(
             }
             return next;
           });
-        },
-        () => {
-          // Metadata is decoration. A failed lookup leaves the rows plain
-          // rather than surfacing an error the user cannot act on.
+        } catch {
           if (cancelled) return;
-          for (const item of stale) fetchedAt.current.set(item.id, item.updatedAt);
-        },
-      )
-      .finally(() => {
-        inFlight.current = false;
-      });
+          for (const item of batch) fetchedAt.current.set(item.id, item.updatedAt);
+        }
+      }
+    }
+    void fetchExecution();
 
     return () => {
       cancelled = true;
     };
-  }, [rpc, staleKey, enabled]);
+  }, [rpc, targetKey, enabled]);
 
   return enabled ? entries : EMPTY;
 }
