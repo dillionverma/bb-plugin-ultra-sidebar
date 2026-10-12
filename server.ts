@@ -52,10 +52,16 @@ const lifecycleSchema = z.object({
   snoozedUntil: z.number().int().nullable(),
 });
 
+const promptSchema = z.object({
+  threadId: z.string(),
+  lastPromptedAt: z.number().int(),
+});
+
 const stateSchema = z.object({
   revision: z.number().int(),
   order: z.array(orderSchema),
   lifecycle: z.array(lifecycleSchema),
+  prompts: z.array(promptSchema),
 });
 
 const placementSchema = z.object({
@@ -425,6 +431,45 @@ export default async function plugin(bb: BbPluginApi) {
         if (agentPulls.get(thread.id) === pull) agentPulls.delete(thread.id);
       });
     agentPulls.set(thread.id, pull);
+  });
+
+  // ---- last prompted ----------------------------------------------------
+  //
+  // A thread rises to the top of its list when the person prompts it. The
+  // signal is the idle -> active transition, which is exactly "they said
+  // something and the agent set off"; steering a thread that is already
+  // running does not fire it, and does not need to, because a running thread
+  // was prompted recently enough to still be near the top.
+  //
+  // The transition alone is not enough: a parent agent telling a child to
+  // start, a queued message firing, a retry after a failure all land here too.
+  // Only the person's own prompts move a row, so the turn that caused this is
+  // read back and its initiator checked.
+  const PROMPT_EVENT = ["client/turn/requested"] as unknown as EventTypes;
+
+  // Clear the parked status regardless of who started the work. This is
+  // separate from prompt recency, which still belongs to the person.
+  bb.events.on("message.queued", ({ entry }) => {
+    if (entry.initiator === "user") store.resumeBacklog(entry.threadId);
+  });
+
+  bb.events.on("thread.active", async ({ thread }) => {
+    store.resumeBacklog(thread.id);
+    try {
+      const [turn] = await bb.sdk.threads.events.list({
+        threadId: thread.id,
+        limit: "1",
+        order: "desc",
+        types: PROMPT_EVENT,
+      });
+      const data = turn?.data as { initiator?: string } | undefined;
+      if (data?.initiator !== "user") return;
+      store.recordPrompt(thread.id, turn.createdAt);
+    } catch (cause) {
+      // A row that keeps its old position is a far smaller problem than a
+      // handler that throws on every thread that starts working.
+      bb.log.warn(`Could not record the prompt for ${thread.id}: ${cause}`);
+    }
   });
 
   const forgetAgent = ({ thread }: { thread: { id: string } }) => {

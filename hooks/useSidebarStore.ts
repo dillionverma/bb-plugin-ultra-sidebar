@@ -24,7 +24,7 @@ import {
 import type { ManualStatus } from "../lib/status";
 import { UndoHistory } from "../lib/history";
 
-const EMPTY_STATE: SidebarState = { revision: -1, order: [], lifecycle: [] };
+const EMPTY_STATE: SidebarState = { revision: -1, order: [], lifecycle: [], prompts: [] };
 
 export interface SidebarStoreApi {
   state: SidebarState;

@@ -9,6 +9,7 @@ import type {
   OrderEntry,
   Placement,
   SidebarState,
+  ThreadPrompt,
 } from "./types";
 import { isManualStatus, type ManualStatus } from "./status";
 import { PULL_REQUEST_MIGRATION } from "./pull-requests.server";
@@ -67,6 +68,10 @@ export const MIGRATIONS: string[] = [
   // Which pull request a thread is about, and what it looked like last time
   // anyone could tell. Not part of SidebarState: see pull-requests.server.ts.
   PULL_REQUEST_MIGRATION,
+  `CREATE TABLE IF NOT EXISTS thread_prompt (
+     thread_id        TEXT PRIMARY KEY,
+     last_prompted_at INTEGER NOT NULL
+   )`,
 ];
 
 interface LifecycleRow {
@@ -81,6 +86,11 @@ interface OrderRow {
   sort_index: number;
 }
 
+interface PromptRow {
+  thread_id: string;
+  last_prompted_at: number;
+}
+
 export interface Store {
   readState(): SidebarState;
   edit(before: SidebarState, after: SidebarState): SidebarState;
@@ -90,7 +100,20 @@ export interface Store {
   clearOrder(items: ItemRef[]): SidebarState;
   /** File threads in a bucket by hand; null lets their own facts decide. */
   setStatus(threadIds: string[], status: ManualStatus | null): SidebarState;
+  /** Resume parked work when a prompt arrives or an agent starts. */
+  resumeBacklog(threadId: string): void;
   setSnoozed(threadId: string, until: number | null): SidebarState;
+  /**
+   * Note that the person just prompted this thread, and let go of any hand-
+   * picked position it had.
+   *
+   * Dropping the position is what "prompting wins" means: the thread rejoins
+   * the recency-sorted rows at the top rather than sitting wherever it was
+   * dragged months ago. It is the same drop `clearOrder` performs, done in the
+   * same transaction as the timestamp so a sidebar never paints one without
+   * the other.
+   */
+  recordPrompt(threadId: string, at: number): SidebarState;
   /** Drop rows for projects/threads that no longer exist. */
   pruneOrder(items: ItemRef[]): { removed: number; state: SidebarState };
 }
@@ -104,6 +127,9 @@ export function createStore(
   );
   const selectLifecycle = db.prepare<[], LifecycleRow>(
     `SELECT thread_id, status, snoozed_until FROM thread_lifecycle`,
+  );
+  const selectPrompts = db.prepare<[], PromptRow>(
+    `SELECT thread_id, last_prompted_at FROM thread_prompt`,
   );
   const selectRevision = db.prepare<[], { value: string }>(
     `SELECT value FROM meta WHERE key = 'revision'`,
@@ -136,6 +162,12 @@ export function createStore(
           threadId: row.thread_id,
           status: isManualStatus(row.status) ? row.status : null,
           snoozedUntil: row.snoozed_until,
+        }),
+      ),
+      prompts: selectPrompts.all().map(
+        (row): ThreadPrompt => ({
+          threadId: row.thread_id,
+          lastPromptedAt: row.last_prompted_at,
         }),
       ),
     };
@@ -210,6 +242,18 @@ export function createStore(
       }).state;
     },
 
+    resumeBacklog(threadId) {
+      const row = db.prepare(
+        "SELECT status FROM thread_lifecycle WHERE thread_id = ?",
+      ).get(threadId) as { status: string | null } | undefined;
+      if (row?.status !== "backlog") return;
+      withWrite(() => {
+        db.prepare(
+          "UPDATE thread_lifecycle SET status = NULL WHERE thread_id = ? AND status = 'backlog'",
+        ).run(threadId);
+      });
+    },
+
     setSnoozed(threadId, until) {
       return withWrite(() => {
         db.prepare(
@@ -217,6 +261,20 @@ export function createStore(
            VALUES (?, NULL, ?)
            ON CONFLICT(thread_id) DO UPDATE SET snoozed_until = excluded.snoozed_until`,
         ).run(threadId, until);
+      }).state;
+    },
+
+    recordPrompt(threadId, at) {
+      return withWrite(() => {
+        db.prepare(
+          `INSERT INTO thread_prompt (thread_id, last_prompted_at)
+           VALUES (?, ?)
+           ON CONFLICT(thread_id) DO UPDATE SET
+             last_prompted_at = excluded.last_prompted_at`,
+        ).run(threadId, at);
+        db.prepare(
+          `DELETE FROM item_order WHERE kind = 'thread' AND ref_id = ?`,
+        ).run(threadId);
       }).state;
     },
 

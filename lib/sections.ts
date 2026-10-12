@@ -128,6 +128,7 @@ export function buildSections(input: SectionsInput): Section[] {
           bucket.label,
           byBucket.get(bucket.key) ?? [],
           tree.orderIndex,
+          tree.promptedAt,
         ),
       );
     }
@@ -154,7 +155,13 @@ export function buildSections(input: SectionsInput): Section[] {
     const nodes = parked.get(bucket) ?? [];
     if (nodes.length === 0 && !dragging) continue;
     sections.push(
-      statusSection(bucket, STATUS_LABEL[bucket], nodes, tree.orderIndex),
+      statusSection(
+        bucket,
+        STATUS_LABEL[bucket],
+        nodes,
+        tree.orderIndex,
+        tree.promptedAt,
+      ),
     );
   }
   return sections;
@@ -185,8 +192,9 @@ function statusSection(
   label: string,
   nodes: readonly ThreadNode[],
   orderIndex: ReadonlyMap<string, number>,
+  promptedAt: ReadonlyMap<string, number>,
 ): Section {
-  const roots = orderBucket(nodes, orderIndex);
+  const roots = orderBucket(nodes, orderIndex, promptedAt);
   return {
     id: statusSectionId(bucket),
     name: label,
@@ -213,11 +221,13 @@ function statusSection(
 function orderBucket(
   nodes: readonly ThreadNode[],
   orderIndex: ReadonlyMap<string, number>,
+  promptedAt: ReadonlyMap<string, number>,
 ): ThreadNode[] {
   const byId = new Map(nodes.map((node) => [node.thread.id, node]));
   const ordered = sortRoots(
     nodes.map((node) => node.thread),
     orderIndex,
+    promptedAt,
   ).map((thread) => byId.get(thread.id)!);
   const placed = (node: ThreadNode) =>
     orderIndex.has(`thread:${node.thread.id}`);

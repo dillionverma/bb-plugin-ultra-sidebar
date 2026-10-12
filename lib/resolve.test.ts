@@ -3,7 +3,7 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { resolveTree, type ProjectGroup, type ResolvedTree } from "./resolve";
 import { buildSections, visibleThreadIds } from "./sections";
 import { statusBucket } from "./status";
-import type { Lifecycle, OrderEntry } from "./types";
+import type { Lifecycle, OrderEntry, ThreadPrompt } from "./types";
 
 const projects = [
   { id: "p1", name: "Alpha", isPersonal: false },
@@ -50,6 +50,7 @@ function run(
   showArchived = false,
   lifecycle: Lifecycle[] = [],
   now = 1000,
+  prompts: ThreadPrompt[] = [],
 ) {
   return resolveTree({
     status: "ready",
@@ -57,6 +58,7 @@ function run(
     threads,
     order,
     lifecycle,
+    prompts,
     showArchived,
     now,
   });
@@ -574,5 +576,59 @@ describe("buildSections", () => {
     expect(sectionsOf(tree, "project", ["p1"]).map((section) => section.id)).toEqual([
       "project:p1",
     ]);
+  });
+});
+
+describe("last prompted", () => {
+  const older = thread({ id: "older", projectId: "p1", createdAt: 10 });
+  const newer = thread({ id: "newer", projectId: "p1", createdAt: 20 });
+
+  it("sorts by creation until something has been prompted", () => {
+    expect(ids(run([older, newer]), "p1")).toEqual(["newer", "older"]);
+  });
+
+  it("lifts the thread the person prompted most recently", () => {
+    const prompts = [{ threadId: "older", lastPromptedAt: 30 }];
+    expect(ids(run([older, newer], [], false, [], 1000, prompts), "p1")).toEqual([
+      "older",
+      "newer",
+    ]);
+  });
+
+  it("leaves a thread prompted longer ago than another was created below it", () => {
+    const prompts = [{ threadId: "older", lastPromptedAt: 15 }];
+    const later = thread({ id: "later", projectId: "p1", createdAt: 40 });
+    expect(
+      ids(run([older, newer, later], [], false, [], 1000, prompts), "p1"),
+    ).toEqual(["later", "newer", "older"]);
+  });
+
+  it("does not lift a thread the person never prompted, however busy", () => {
+    // The point of prompting as the signal: an agent working flat out on
+    // `newer` cannot reorder the list, only the person can.
+    const busy = thread({
+      id: "newer",
+      projectId: "p1",
+      createdAt: 20,
+      updatedAt: 9_999,
+      indicator: "runtime",
+    });
+    const prompts = [{ threadId: "older", lastPromptedAt: 30 }];
+    expect(ids(run([older, busy], [], false, [], 1000, prompts), "p1")).toEqual([
+      "older",
+      "newer",
+    ]);
+  });
+
+  it("still sorts hand-placed rows below, and among themselves by hand", () => {
+    // A prompt drops the thread's stored position (see Store.recordPrompt),
+    // so a row that still has one was not the one just prompted.
+    const order: OrderEntry[] = [
+      { kind: "thread", refId: "newer", sortIndex: 0 },
+    ];
+    const prompts = [{ threadId: "newer", lastPromptedAt: 99 }];
+    expect(ids(run([older, newer], order, false, [], 1000, prompts), "p1")).toEqual(
+      ["older", "newer"],
+    );
   });
 });

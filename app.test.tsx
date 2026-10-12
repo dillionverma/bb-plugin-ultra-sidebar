@@ -77,7 +77,7 @@ const projects = [
   { id: "p2", name: "Beta", isPersonal: false },
 ];
 
-const state: SidebarState = { revision: 1, order: [], lifecycle: [] };
+const state: SidebarState = { revision: 1, order: [], lifecycle: [], prompts: [] };
 
 describe("PR outcome labels", () => {
   it.each([

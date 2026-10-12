@@ -40,11 +40,27 @@ export interface Lifecycle {
   snoozedUntil: number | null;
 }
 
+/**
+ * When the person last sent this thread a prompt.
+ *
+ * Only their own prompts count. A parent agent telling a child to get on with
+ * it, a queued message firing, a retry — none of those are someone deciding
+ * this is the thread they care about now, and none of them move a row.
+ *
+ * A row exists only once a thread has been prompted since this was added, so
+ * absence means "never prompted, sort by when it was created".
+ */
+export interface ThreadPrompt {
+  threadId: string;
+  lastPromptedAt: number;
+}
+
 /** Everything the sidebar needs from us, in one payload. */
 export interface SidebarState {
   revision: number;
   order: OrderEntry[];
   lifecycle: Lifecycle[];
+  prompts: ThreadPrompt[];
 }
 
 /** An ordered item, before positions are assigned. */

@@ -30,6 +30,10 @@ export function applyStateChange(
   };
   const result: SidebarState = {
     revision: current.revision,
+    // Not merged, and deliberately not undoable: "I sent that thread a
+    // prompt" is a thing that happened, not an arrangement to step back
+    // through. Undo restores the order and triage around it.
+    prompts: current.prompts,
     order: merge(
       current.order,
       before.order,

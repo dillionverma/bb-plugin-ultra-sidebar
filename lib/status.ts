@@ -1,7 +1,8 @@
 // The five statuses a thread can be in, after Conductor (and Linear before it).
 //
 // Two kinds of fact feed this. The person can file a thread by hand into
-// Backlog, Done or Canceled, and that sticks until they change it. Everything
+// Backlog, Done or Canceled. Backlog clears when prompted or started again;
+// Done and Canceled stick until changed by hand. Everything
 // else is read off the thread's pull request: merged is Done, open is In
 // review, and a thread with nothing to say about itself is simply In progress
 // — the default, and the only bucket with no explicit cause.

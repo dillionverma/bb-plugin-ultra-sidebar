@@ -9,7 +9,7 @@ import type {
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { ItemRef, Lifecycle, OrderEntry } from "./types";
+import type { ItemRef, Lifecycle, OrderEntry, ThreadPrompt } from "./types";
 import { itemKey } from "./types";
 
 /**
@@ -77,6 +77,12 @@ export interface ResolvedTree {
    * sort them against the same order rather than inventing a second one.
    */
   orderIndex: ReadonlyMap<string, number>;
+  /**
+   * When each thread was last prompted, keyed by thread id. Exposed for the
+   * same reason as `orderIndex`: a view that re-buckets these rows sorts them
+   * against the same recency, rather than inventing a second one.
+   */
+  promptedAt: ReadonlyMap<string, number>;
   /** Order rows naming a project/thread the host no longer reports. */
   unknownOrder: ItemRef[];
   /** Roots hidden from the list until their wake time, soonest first. */
@@ -95,6 +101,7 @@ export interface ResolveInput {
   threads: readonly PluginSidebarThread[];
   order: readonly OrderEntry[];
   lifecycle: readonly Lifecycle[];
+  prompts?: readonly ThreadPrompt[];
   showArchived: boolean;
   /** Injected so tests are deterministic rather than clock-dependent. */
   now?: number;
@@ -105,6 +112,7 @@ const EMPTY_TREE: ResolvedTree = {
   pinnedManual: false,
   projects: [],
   orderIndex: new Map(),
+  promptedAt: new Map(),
   unknownOrder: [],
   snoozed: [],
   wokenEarly: [],
@@ -168,6 +176,9 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const threadById = new Map(threads.map((thread) => [thread.id, thread]));
 
+  const promptedAt = new Map<string, number>(
+    (input.prompts ?? []).map((row) => [row.threadId, row.lastPromptedAt]),
+  );
   const orderIndex = new Map<string, number>();
   const unknownOrder: ItemRef[] = [];
   for (const entry of order) {
@@ -259,7 +270,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
 
   const projectGroups: ProjectGroup[] = orderedProjects.map((project) => {
     const threadsHere = rootsByProject.get(project.id) ?? [];
-    const sorted = sortRoots(threadsHere, orderIndex);
+    const sorted = sortRoots(threadsHere, orderIndex, promptedAt);
     const groupRoots = sorted.map((thread) =>
       buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
     );
@@ -278,7 +289,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
   // somewhere, or they would silently vanish from the sidebar.
   for (const [projectId, threadsHere] of rootsByProject) {
     if (projectById.has(projectId)) continue;
-    const sorted = sortRoots(threadsHere, orderIndex);
+    const sorted = sortRoots(threadsHere, orderIndex, promptedAt);
     const groupRoots = sorted.map((thread) =>
       buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
     );
@@ -291,7 +302,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     });
   }
 
-  const pinned = sortRoots(pinnedRoots, orderIndex).map((thread) =>
+  const pinned = sortRoots(pinnedRoots, orderIndex, promptedAt).map((thread) =>
     buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
   );
 
@@ -305,6 +316,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     ),
     projects: projectGroups,
     orderIndex,
+    promptedAt,
     unknownOrder,
     snoozed,
     wokenEarly,
@@ -320,21 +332,33 @@ export function countRows(nodes: readonly ThreadNode[]): number {
  *
  * A thread with no stored position has never been dragged, and sorts above
  * the ones that have: that is what keeps a brand new thread at the top of a
- * list the user has hand-ordered, instead of burying it underneath. Sorting
- * by activity was tried and rejected — rows jumped around while agents
- * streamed, which is worse than a stale order.
+ * list the user has hand-ordered, instead of burying it underneath.
+ *
+ * Within those, the newest thing the person touched comes first: the last
+ * time they prompted it, falling back to when it was created for a thread
+ * they have not prompted since this was recorded.
+ *
+ * Sorting by *agent* activity was tried and rejected — rows jumped around
+ * while agents streamed, which is worse than a stale order. A prompt is the
+ * opposite kind of event: it happens once, because the person did it, so a
+ * row can only move while they are the one moving it.
  */
 export function sortRoots(
   threads: readonly PluginSidebarThread[],
   orderIndex: ReadonlyMap<string, number>,
+  promptedAt: ReadonlyMap<string, number> = new Map(),
 ): PluginSidebarThread[] {
+  const recency = (thread: PluginSidebarThread) =>
+    promptedAt.get(thread.id) ?? thread.createdAt;
   return [...threads].sort((a, b) => {
     const indexA = orderIndex.get(itemKey("thread", a.id));
     const indexB = orderIndex.get(itemKey("thread", b.id));
     if (indexA !== undefined && indexB !== undefined) return indexA - indexB;
     if (indexA !== undefined) return 1;
     if (indexB !== undefined) return -1;
-    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+    const recencyA = recency(a);
+    const recencyB = recency(b);
+    if (recencyA !== recencyB) return recencyB - recencyA;
     return a.id.localeCompare(b.id);
   });
 }
