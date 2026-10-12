@@ -231,6 +231,69 @@ function heading(
 }
 
 describe("ultra sidebar thread list", () => {
+  it("uses the existing child-thread tree for workflow workers", async () => {
+    const slot = await mount({
+      threads: [thread({ id: "origin", projectId: "p1" }), thread({ id: "ordinary-child", projectId: "p1", parentThreadId: "origin" })],
+      rpc: { "threads.workflowAgents": () => ({ entries: [{ threadId: "origin", unavailable: false, runs: [{
+        id: "run", name: "Native design", agents: [
+          { id: "a", label: "Glass feasibility", status: "running", childThreadId: "worker", model: "astra", provider: "codex", createdAt: 2 },
+          { id: "b", label: "Foundation", status: "succeeded", childThreadId: "done-worker", model: "astra", provider: "codex", createdAt: 3 },
+          { id: "c", label: "Integration", status: "queued", childThreadId: null, model: "astra", provider: "codex", createdAt: 4 },
+        ],
+      }] }] }) },
+    });
+    const agent = await slot.findByText("Glass feasibility");
+    const row = agent.closest("[data-sidebar-thread-id]")!;
+    expect(row.getAttribute("data-sidebar-thread-id")).toBe("worker");
+    const children = row.closest("ul")!;
+    expect(children.textContent).toContain("ordinary-child");
+    expect(children.textContent).toContain("Foundation");
+    expect(slot.queryByText("Integration")).toBeNull();
+    expect(slot.queryByText("Agents")).toBeNull();
+    fireEvent.click(row);
+    expect(slot.inspection.navigateCalls).toContainEqual({ method: "toThread", threadId: "worker" });
+    fireEvent.click(slot.getByRole("button", { name: "Collapse subagents of origin" }));
+    expect(slot.queryByText("Glass feasibility")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Expand subagents of origin" }));
+    expect(slot.getByText("Glass feasibility")).toBeTruthy();
+    const childRow = slot.getByText("Glass feasibility").closest<HTMLElement>("[data-sidebar-thread-id]")!;
+    childRow.focus();
+    fireEvent.keyDown(childRow, { key: "ArrowLeft" });
+    expect(document.activeElement?.getAttribute("data-sidebar-thread-id")).toBe("origin");
+  });
+
+  it("keeps the source thread when workflow status is unavailable", async () => {
+    const slot = await mount({
+      threads: [thread({ id: "origin", projectId: "p1" })],
+      rpc: { "threads.workflowAgents": () => { throw new Error("Offline"); } },
+    });
+    expect(slot.getByText("origin")).toBeTruthy();
+    expect(slot.queryByText("Agents")).toBeNull();
+  });
+
+  it("removes workflow children when the workflow ends", async () => {
+    let finished = false;
+    const slot = await mount({
+      threads: [thread({ id: "origin", projectId: "p1" })],
+      rpc: { "threads.workflowAgents": () => ({ entries: [{ threadId: "origin", unavailable: false, runs: finished ? [] : [{
+        id: "run", name: "Design", agents: [{ id: "a", label: "Worker", status: "running", childThreadId: "worker", model: "astra", provider: "codex", createdAt: 2 }],
+      }] }] }) },
+    });
+    await slot.findByText("Worker");
+    finished = true;
+    await slot.behavior.setRealtimeConnectionState("reconnecting");
+    await waitFor(() => expect(slot.queryByText("Worker")).toBeNull());
+    expect(slot.queryByRole("button", { name: "Collapse subagents of origin" })).toBeNull();
+  });
+
+  it("discovers workflows even without a host activity hint and leaves ordinary threads clean", async () => {
+    const read = vi.fn(() => ({ entries: [] }));
+    const slot = await mount({ threads: [thread({ id: "ordinary", projectId: "p1" })], rpc: { "threads.workflowAgents": read } });
+    expect(slot.getByText("ordinary")).toBeTruthy();
+    await waitFor(() => expect(read).toHaveBeenCalledWith({ threadIds: ["ordinary"] }));
+    expect(slot.queryByText("Agents")).toBeNull();
+  });
+
   it("registers the exclusive thread-list slot", async () => {
     const app = await loadPluginApp(() => import("./app"));
     expect(app.threadLists).toHaveLength(1);

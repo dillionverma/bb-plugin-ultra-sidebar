@@ -1,4 +1,6 @@
 import { ThreadQueueProvider } from "../hooks/useThreadQueue";
+import { useWorkflowAgents } from "../hooks/useWorkflowAgents";
+import { withWorkflowThreads } from "../lib/workflow-agents";
 import { useThreadDiffs } from "../hooks/useThreadDiffs";
 import { ThreadDiffsContext } from "./ThreadWorkSummary";
 import { SidebarInteractions, useSidebarSelection } from "./SidebarInteractions";
@@ -78,6 +80,10 @@ import { revealPaths } from "@/lib/reveal-path";
 function SidebarBody(props: PluginThreadListProps) {
   const { activeThreadId, onNavigate } = props;
   const host = experimental_useSidebarThreads();
+  const hostThreadsRef = useRef(host.threads);
+  hostThreadsRef.current = host.threads;
+  const workflowAgents = useWorkflowAgents(host.threads);
+  const threads = useMemo(() => withWorkflowThreads(host.threads, workflowAgents), [host.threads, workflowAgents]);
   const threadActions = experimental_useSidebarThreadActions();
   const store = useSidebarStore();
 
@@ -127,7 +133,7 @@ function SidebarBody(props: PluginThreadListProps) {
       resolveTree({
         status: host.status,
         projects: host.projects,
-        threads: host.threads,
+        threads,
         order: store.state.order,
         lifecycle: store.state.lifecycle,
         prompts: store.state.prompts,
@@ -137,7 +143,7 @@ function SidebarBody(props: PluginThreadListProps) {
     [
       host.status,
       host.projects,
-      host.threads,
+      threads,
       store.state.order,
       store.state.lifecycle,
       store.state.prompts,
@@ -234,7 +240,9 @@ function SidebarBody(props: PluginThreadListProps) {
         ? "pending"
         : node.thread.id === activeThreadId
           ? "active"
-          : null,
+          : node.thread.originPluginId === "workflows" && node.thread.indicator === "runtime"
+            ? "workflow-running"
+            : null,
     )) {
       if (revealedRef.current.has(path.key)) continue;
       revealedRef.current.add(path.key);
@@ -507,7 +515,10 @@ function SidebarBody(props: PluginThreadListProps) {
         }
       },
       openThread: (threadId, split) => {
-        threadActions.open(threadId, { split });
+        // Sidebar actions only resolve threads in the host's visible list.
+        // Workflow workers are hidden; direct navigation loads them by ID.
+        if (hostThreadsRef.current.some(thread => thread.id === threadId)) threadActions.open(threadId, { split });
+        else navigate.toThread(threadId);
         onNavigate();
       },
       setPinned: (threadId: string, pinned: boolean) => {
@@ -669,7 +680,7 @@ function SidebarBody(props: PluginThreadListProps) {
             <SidebarInteractions
               history={store.history}
               batch={store.batch}
-              threadIds={host.threads.map(thread => thread.id)}
+              threadIds={threads.map(thread => thread.id)}
               onNewThread={() => {
                 const event = new Event("quick-thread:open", { cancelable: true });
                 if (window.dispatchEvent(event)) threadActions.openNewThread({ focusPrompt: true });

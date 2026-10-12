@@ -24,6 +24,12 @@ grouped by **project** or by **status**. Read and file them with `bb sidebar`.
 4. Subagent threads are **nested under the thread that spawned them** and are
    never ordered separately. A subtree always follows its root.
 
+Active workflow workers use the same nested child-thread rows and parent
+chevron as other subagents. Running children reveal their parent once; users
+can then collapse it. Workers appear once their thread exists and leave the
+tree when the workflow ends. Their sidebar parent comes from the Workflows
+plugin; their core visibility and ownership stay unchanged.
+
 ## Commands
 
 ```

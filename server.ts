@@ -30,6 +30,7 @@ import { summarizeQueue } from "./lib/thread-queue";
 import { createScheduledTasksActions, createScheduledTasksReader, scheduledTaskRefSchema, scheduledTasksResultSchema } from "./lib/scheduled-tasks.server";
 import { createThreadDiffReader, threadDiffSchema } from "./lib/thread-diffs.server";
 import { createPullRequestBindings, createPullRequestReader } from "./lib/pull-requests.server";
+import { createWorkflowAgentsReader, workflowAgentsResultSchema } from "./lib/workflow-agents.server";
 import { ProjectIconCache } from "./lib/project-artwork-cache";
 import { findProjectArtwork, type ProjectArtwork } from "./lib/project-artwork.server";
 
@@ -129,6 +130,10 @@ const agentActivitySchema = z.object({
 });
 
 export const rpcContract = defineRpcContract({
+  "threads.workflowAgents": {
+    input: z.object({ threadIds: z.array(z.string().min(1)).min(1).max(100) }),
+    output: workflowAgentsResultSchema,
+  },
   "threads.plan": {
     input: z.object({ threadId: z.string().min(1) }),
     output: z.object({ plan: z.object({
@@ -325,6 +330,7 @@ export const rpcContract = defineRpcContract({
 
 export default async function plugin(bb: BbPluginApi) {
   const scheduledTasks = createScheduledTasksReader(bb.sdk.plugins);
+  const workflowAgents = createWorkflowAgentsReader(bb.sdk.plugins);
   const scheduledTaskActions = createScheduledTasksActions(bb.sdk.plugins, scheduledTasks.invalidate);
   const readThreadDiffs = createThreadDiffReader(bb.sdk.environments);
   const db = bb.storage.database();
@@ -552,6 +558,7 @@ export default async function plugin(bb: BbPluginApi) {
       goal: (await bb.sdk.threads.timeline({ threadId, segmentLimit: "1", summaryOnly: "true" })).goal,
     }),
     "scheduledTasks.list": () => scheduledTasks.list(),
+    "threads.workflowAgents": ({ threadIds }) => workflowAgents(threadIds),
     "scheduledTasks.run": (ref) => scheduledTaskActions.run(ref),
     "scheduledTasks.setEnabled": (input) => scheduledTaskActions.setEnabled(input),
     "scheduledTasks.delete": (ref) => scheduledTaskActions.remove(ref),
