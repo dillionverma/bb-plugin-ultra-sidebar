@@ -33,9 +33,9 @@ describe("parsePullRequestRef", () => {
 });
 
 describe("isSettled", () => {
-  it("counts merged and closed as final, and nothing else", () => {
+  it("only counts merged as final because a closed pull request can reopen", () => {
     expect(isSettled("merged")).toBe(true);
-    expect(isSettled("closed")).toBe(true);
+    expect(isSettled("closed")).toBe(false);
     expect(isSettled("open")).toBe(false);
     expect(isSettled("draft")).toBe(false);
   });

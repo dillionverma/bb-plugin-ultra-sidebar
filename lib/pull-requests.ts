@@ -48,14 +48,11 @@ export interface PullRequestSnapshot {
 /**
  * Whether a pull request has reached a state it can never leave.
  *
- * Merged and closed are final — GitHub offers no path back out of merged, and
- * a reopened PR gets a fresh state we would see on the next environment read
- * anyway. This is what keeps the fallback cheap: the overwhelming majority of
- * threads whose checkout is gone are finished work, and a settled snapshot is
- * served from SQLite forever without touching the network again.
+ * Merged pull requests cannot reopen. Closed pull requests can, including
+ * after their checkout disappears, so their binding must still refresh.
  */
 export function isSettled(state: PullRequestState): boolean {
-  return state === "merged" || state === "closed";
+  return state === "merged";
 }
 
 const PULL_URL = /github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/;

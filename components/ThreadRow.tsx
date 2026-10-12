@@ -315,8 +315,9 @@ export const ThreadRow = memo(function ThreadRow({
     status?.tone === "needs-you" || status?.tone === "problem";
   // The turn itself ended in an error (not a PR problem): bb can re-run it.
   const failed = thread.indicator === "unread-error";
+  const hasPrOutcome = pullRequest?.state === "closed" || pullRequest?.state === "merged";
   const showRowStatus =
-    status !== null && status.tone !== "idle" && status.tone !== "done" &&
+    status !== null && (hasPrOutcome || (status.tone !== "idle" && status.tone !== "done")) &&
     status.text !== STATUS_LABEL[bucket] &&
     thread.indicator !== "goal" && thread.indicator !== "plan-mode";
   const threadDetails = (

@@ -24,7 +24,7 @@ export type PullRequestMap = ReadonlyMap<string, ThreadPullRequest>;
 const EMPTY: PullRequestMap = new Map();
 
 /** How long before a thread's PR state is re-checked. */
-const REFRESH_MS = 90_000;
+const REFRESH_MS = 30_000;
 
 /** The server's per-call ceiling; larger lists go up in pieces. */
 const BATCH_SIZE = 300;
@@ -53,8 +53,12 @@ export function useThreadPullRequests(
     }
 
     let cancelled = false;
-    let timer: number;
+    let refreshing = false;
+    let timer: number | undefined;
     async function refresh() {
+      if (cancelled || refreshing) return;
+      window.clearTimeout(timer);
+      refreshing = true;
       try {
         const batches: (typeof targets)[] = [];
         for (let index = 0; index < targets.length; index += BATCH_SIZE) {
@@ -74,16 +78,25 @@ export function useThreadPullRequests(
       } catch {
         // Keep known PRs during a transient failure, and always retry.
       } finally {
+        refreshing = false;
         if (!cancelled) timer = window.setTimeout(refresh, REFRESH_MS);
       }
     }
 
+    const onVisible = () => {
+      if (document.visibilityState !== "hidden") void refresh();
+    };
+
     // A changed target list gets its own refresh immediately. Old requests
     // may finish, but cannot overwrite the new list or stop its polling.
     timer = window.setTimeout(refresh, 0);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [rpc, key, enabled]);
 

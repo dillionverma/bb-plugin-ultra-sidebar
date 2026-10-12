@@ -160,9 +160,9 @@ export interface PullRequestReaderDeps {
 
 // A git-host round trip is the expensive part, and several threads can share
 // one environment, so the environment answer is cached by environment.
-const ENVIRONMENT_TTL_MS = 60_000;
+const ENVIRONMENT_TTL_MS = 30_000;
 // Keyed by pull request, so two threads watching one PR cost one lookup.
-const FETCH_TTL_MS = 60_000;
+const FETCH_TTL_MS = 30_000;
 // A thread whose text names no pull request will not start naming one soon.
 const DISCOVERY_TTL_MS = 10 * 60_000;
 const CONCURRENCY = 4;
@@ -344,8 +344,6 @@ export function createPullRequestReader(deps: PullRequestReaderDeps) {
 
     const binding = deps.bindings.read(threadId);
     if (binding !== null) {
-      // Merged and closed are final: no request can change them. Neither is a
-      // binding whose URL never yielded a repository to ask about.
       if (isSettled(binding.snapshot.state) || binding.repo === "") {
         return binding.snapshot;
       }

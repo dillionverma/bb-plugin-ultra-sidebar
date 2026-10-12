@@ -79,6 +79,84 @@ const projects = [
 
 const state: SidebarState = { revision: 1, order: [], lifecycle: [] };
 
+describe("PR outcome labels", () => {
+  it.each([
+    { state: "closed", label: "Closed", bucket: "Canceled", compact: false },
+    { state: "closed", label: "Closed", bucket: "Canceled", compact: true },
+    { state: "merged", label: "Merged", bucket: "Done", compact: false },
+    { state: "merged", label: "Merged", bucket: "Done", compact: true },
+  ])("shows $label in $bucket with compact=$compact", async outcome => {
+    const slot = await mount({
+      compact: outcome.compact,
+      threads: [thread({
+        id: "pr-thread", projectId: "p1",
+        environment: {
+          id: "pr-env", name: "feature", branchName: "feature",
+          providerId: null, workspaceDisplayKind: null,
+        },
+      })],
+      rpc: {
+        "threads.pullRequests": () => ({ entries: [{
+          threadId: "pr-thread", number: 42, title: "Feature",
+          url: "https://github.com/acme/alpha/pull/42",
+          state: outcome.state, attention: outcome.state,
+          checksState: "passing", failedChecks: 0,
+        }] }),
+      },
+    });
+    await slot.findByRole("button", { name: `Collapse ${outcome.bucket}` });
+    expect(await slot.findByText(outcome.label)).toBeTruthy();
+    expect(slot.queryByText("Ready")).toBeNull();
+  });
+
+  it("updates the visible label and section after external close, reopen, and merge", async () => {
+    let remoteState: "open" | "closed" | "merged" = "open";
+    const slot = await mount({
+      mode: "status",
+      threads: [thread({
+        id: "pr-thread", projectId: "p1",
+        environment: {
+          id: "pr-env", name: "feature", branchName: "feature",
+          providerId: null, workspaceDisplayKind: null,
+        },
+      })],
+      rpc: {
+        "threads.pullRequests": () => ({ entries: [{
+          threadId: "pr-thread", number: 42, title: "Feature",
+          url: "https://github.com/acme/alpha/pull/42",
+          state: remoteState,
+          attention: remoteState === "open" ? "ready_to_merge" : remoteState,
+          checksState: "passing", failedChecks: 0,
+        }] }),
+      },
+    });
+    const ready = await slot.findByText("Ready");
+    expect(ready.closest("section")?.querySelector("[data-sidebar-section-id]")?.getAttribute("data-sidebar-section-id"))
+      .toBe("status:in-review");
+
+    remoteState = "closed";
+    fireEvent.focus(window);
+    const closed = await slot.findByText("Closed");
+    expect(closed.closest("section")?.querySelector("[data-sidebar-section-id]")?.getAttribute("data-sidebar-section-id"))
+      .toBe("status:canceled");
+    expect(slot.queryByText("Ready")).toBeNull();
+
+    remoteState = "open";
+    fireEvent.focus(window);
+    const reopened = await slot.findByText("Ready");
+    expect(reopened.closest("section")?.querySelector("[data-sidebar-section-id]")?.getAttribute("data-sidebar-section-id"))
+      .toBe("status:in-review");
+    expect(slot.queryByText("Closed")).toBeNull();
+
+    remoteState = "merged";
+    fireEvent.focus(window);
+    const merged = await slot.findByText("Merged");
+    expect(merged.closest("section")?.querySelector("[data-sidebar-section-id]")?.getAttribute("data-sidebar-section-id"))
+      .toBe("status:done");
+    expect(slot.queryByText("Ready")).toBeNull();
+  });
+});
+
 async function mount(options: {
   threads: PluginSidebarThread[];
   projects?: { id: string; name: string; isPersonal: boolean }[];

@@ -16,7 +16,7 @@ import { z } from "zod";
 import { createStore, MIGRATIONS, type Store } from "./lib/store.server";
 import { placeItem, toPlacement } from "./lib/order";
 import { SIDEBAR_CHANGED, type ItemKind, type Placement } from "./lib/types";
-import { isManualStatus } from "./lib/status";
+import { isManualStatus, statusBucket } from "./lib/status";
 import {
   AGENT_ACTIVITY,
   AGENT_EVENT_TYPES,
@@ -858,15 +858,28 @@ export default async function plugin(bb: BbPluginApi) {
             const wantedProject = flagValue(args, "--project");
             const threads = (
               await bb.sdk.threads.list({ archived: false })
-            ).filter(
-              (thread) =>
-                wantedProject === null || thread.projectId === wantedProject,
+            )
+              .filter(
+                (thread) =>
+                  wantedProject === null || thread.projectId === wantedProject,
+              )
+              .slice(0, 200);
+            const pullsById = new Map(
+              (await readPullRequests(
+                threads.flatMap((thread) => thread.environmentId === null ? [] : [{
+                  threadId: thread.id,
+                  environmentId: thread.environmentId,
+                }]),
+              )).map((pull) => [pull.threadId, pull]),
             );
-            const rows = threads.slice(0, 200).map((thread) => ({
+            const rows = threads.map((thread) => ({
               threadId: thread.id,
               projectId: thread.projectId,
               title: thread.title,
-              status: statusById.get(thread.id)?.status ?? "in-progress",
+              status: statusBucket(
+                statusById.get(thread.id)?.status ?? null,
+                pullsById.get(thread.id),
+              ),
               snoozedUntil: statusById.get(thread.id)?.snoozedUntil ?? null,
               sortIndex: orderById.get(thread.id) ?? null,
             }));

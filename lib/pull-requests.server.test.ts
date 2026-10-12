@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import { MIGRATIONS } from "./store.server";
 import {
@@ -7,6 +7,8 @@ import {
 } from "./pull-requests.server";
 
 const target = { threadId: "thread", environmentId: "env" };
+
+afterEach(() => vi.restoreAllMocks());
 
 const hostPull = {
   number: 1019,
@@ -119,6 +121,38 @@ describe("pull request reader", () => {
     });
     expect(await read([target])).toMatchObject([{ state: "merged" }]);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["closed", "merged"])("refreshes a pull request %s elsewhere", async (state) => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const { read, environments, bindings } = setup();
+    expect(await read([target])).toMatchObject([{ state: "open" }]);
+    environments.pullRequest.mockResolvedValue({
+      outcome: "available",
+      pullRequest: { ...hostPull, state, attention: state },
+    });
+    now.mockReturnValue(30_001);
+    expect(await read([target])).toMatchObject([{ state, attention: state }]);
+    expect(bindings.read("thread")?.snapshot.state).toBe(state);
+  });
+
+  it("refreshes a closed binding when the pull request reopens elsewhere", async () => {
+    const { read, bindings, fetch } = setup({ outcome: "unavailable" });
+    bindings.write("thread", { repo: "productstudioinc/cops", number: 1019 }, {
+      ...hostPull,
+      state: "closed",
+      attention: "closed",
+      checksState: "passing",
+      failedChecks: 0,
+    });
+    fetch.mockResolvedValue({
+      ...hostPull,
+      state: "open",
+      checksState: "passing",
+      failedChecks: 0,
+    });
+    expect(await read([target])).toMatchObject([{ state: "open", attention: "none" }]);
+    expect(bindings.read("thread")?.snapshot.state).toBe("open");
   });
 
   it("keeps the stale snapshot when a refresh fails", async () => {
