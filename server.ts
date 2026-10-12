@@ -29,6 +29,7 @@ import {
 import { summarizeQueue } from "./lib/thread-queue";
 import { createScheduledTasksActions, createScheduledTasksReader, scheduledTaskRefSchema, scheduledTasksResultSchema } from "./lib/scheduled-tasks.server";
 import { createThreadDiffReader, threadDiffSchema } from "./lib/thread-diffs.server";
+import { createPullRequestBindings, createPullRequestReader } from "./lib/pull-requests.server";
 import { ProjectIconCache } from "./lib/project-artwork-cache";
 import { findProjectArtwork, type ProjectArtwork } from "./lib/project-artwork.server";
 
@@ -678,6 +679,12 @@ export default async function plugin(bb: BbPluginApi) {
     return { outcome: "opened", path: location.path };
   }
 
+  const readPullRequests = createPullRequestReader({
+    environments: bb.sdk.environments,
+    threads: bb.sdk.threads,
+    bindings: createPullRequestBindings(db),
+  });
+
   /**
    * Resolve each thread's model in parallel, degrading per thread.
    *
@@ -685,57 +692,6 @@ export default async function plugin(bb: BbPluginApi) {
    * event-driven rather than polled; the short TTL just absorbs the burst when
    * several windows paint at once.
    */
-  // Keyed by environment: a git-host round trip is the expensive part, and
-  // several threads can share one environment.
-  const pullRequestCache = new Map<
-    string,
-    { at: number; value: z.infer<typeof pullRequestSchema> | null }
-  >();
-  const PULL_REQUEST_TTL_MS = 60_000;
-
-  async function readPullRequests(
-    threads: { threadId: string; environmentId: string }[],
-  ): Promise<z.infer<typeof pullRequestSchema>[]> {
-    const now = Date.now();
-    const results = await Promise.all(
-      threads.map(async ({ threadId, environmentId }) => {
-        const cached = pullRequestCache.get(environmentId);
-        if (cached !== undefined && now - cached.at < PULL_REQUEST_TTL_MS) {
-          return cached.value === null ? null : { ...cached.value, threadId };
-        }
-        let value: z.infer<typeof pullRequestSchema> | null = null;
-        try {
-          const result = await bb.sdk.environments.pullRequest({
-            environmentId,
-          });
-          // The union also carries "absent", "not_applicable" and
-          // "unavailable"; only one of them means there is a PR to show.
-          if (result.outcome === "available") {
-            const pr = result.pullRequest;
-            value = {
-              threadId,
-              number: pr.number,
-              title: pr.title,
-              url: pr.url,
-              state: pr.state,
-              attention: pr.attention,
-              checksState: pr.checks?.state ?? null,
-              failedChecks: pr.checks?.failedCount ?? 0,
-            };
-          }
-        } catch {
-          // A git-host hiccup leaves the row without a PR label rather than
-          // taking the rest of the batch down.
-        }
-        pullRequestCache.set(environmentId, { at: now, value });
-        return value === null ? null : { ...value, threadId };
-      }),
-    );
-    return results.filter(
-      (entry): entry is z.infer<typeof pullRequestSchema> => entry !== null,
-    );
-  }
-
   const executionCache = new Map<
     string,
     { at: number; value: z.infer<typeof executionSchema> }

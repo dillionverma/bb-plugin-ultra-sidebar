@@ -6,6 +6,12 @@
 // review, and a thread with nothing to say about itself is simply In progress
 // — the default, and the only bucket with no explicit cause.
 //
+// Which puts the weight on how hard we looked before concluding a thread has
+// no pull request. See pull-requests.ts: resolving one from the thread's
+// environment alone gets this wrong the moment a checkout is deleted, and
+// silently files merged work as In progress. Callers are expected to pass
+// what that module resolves, not a raw environment lookup.
+//
 // Free of react and node imports: the server's CLI and the app both use it.
 
 /** The statuses a person can set by hand. Everything else is derived. */

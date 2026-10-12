@@ -11,6 +11,7 @@ import type {
   SidebarState,
 } from "./types";
 import { isManualStatus, type ManualStatus } from "./status";
+import { PULL_REQUEST_MIGRATION } from "./pull-requests.server";
 
 /**
  * APPEND-ONLY. bb.storage.migrate hashes each statement by its index and
@@ -63,6 +64,9 @@ export const MIGRATIONS: string[] = [
   // that ever showed, and sort_index was already global and dense.
   `INSERT OR IGNORE INTO item_order (kind, ref_id, sort_index)
      SELECT kind, ref_id, sort_index FROM assignments`,
+  // Which pull request a thread is about, and what it looked like last time
+  // anyone could tell. Not part of SidebarState: see pull-requests.server.ts.
+  PULL_REQUEST_MIGRATION,
 ];
 
 interface LifecycleRow {
