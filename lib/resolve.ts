@@ -9,7 +9,7 @@ import type {
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { ItemRef, Lifecycle, OrderEntry, ThreadPrompt } from "./types";
+import type { Lifecycle, OrderEntry, ThreadPrompt } from "./types";
 import { itemKey } from "./types";
 
 /**
@@ -83,8 +83,6 @@ export interface ResolvedTree {
    * against the same recency, rather than inventing a second one.
    */
   promptedAt: ReadonlyMap<string, number>;
-  /** Order rows naming a project/thread the host no longer reports. */
-  unknownOrder: ItemRef[];
   /** Roots hidden from the list until their wake time, soonest first. */
   snoozed: SnoozedEntry[];
   /**
@@ -113,12 +111,11 @@ const EMPTY_TREE: ResolvedTree = {
   projects: [],
   orderIndex: new Map(),
   promptedAt: new Map(),
-  unknownOrder: [],
   snoozed: [],
   wokenEarly: [],
 };
 
-const ATTENTION_INDICATORS = new Set(["waiting-for-input", "unread-error"]);
+export const ATTENTION_INDICATORS = new Set(["waiting-for-input", "unread-error"]);
 const LIVE_INDICATORS = new Set([
   "runtime",
   "workflow",
@@ -152,46 +149,29 @@ function isWorking(thread: PluginSidebarThread): boolean {
  * or a raised hand is the one failure this feature cannot afford.
  */
 function wakesEarly(thread: PluginSidebarThread): boolean {
-  if (thread.hasPendingInteraction) return true;
-  if (ATTENTION_INDICATORS.has(thread.indicator)) return true;
-  if (LIVE_INDICATORS.has(thread.indicator)) return true;
-  const activity = thread.activity;
   return (
-    activity.workflows > 0 ||
-    activity.backgroundAgents > 0 ||
-    activity.backgroundCommands > 0 ||
-    activity.planMode > 0 ||
-    activity.goals > 0
+    thread.hasPendingInteraction ||
+    ATTENTION_INDICATORS.has(thread.indicator) ||
+    isWorking(thread)
   );
 }
 
 export function resolveTree(input: ResolveInput): ResolvedTree {
-  // Never derive anything — least of all orphan candidates — from a snapshot
-  // the host has not finished loading.
+  // Derive nothing from a snapshot the host has not finished loading.
   if (input.status !== "ready") return EMPTY_TREE;
 
   const { projects, threads, order, showArchived } = input;
   const now = input.now ?? Date.now();
 
   const projectById = new Map(projects.map((project) => [project.id, project]));
-  const threadById = new Map(threads.map((thread) => [thread.id, thread]));
 
   const promptedAt = new Map<string, number>(
     (input.prompts ?? []).map((row) => [row.threadId, row.lastPromptedAt]),
   );
-  const orderIndex = new Map<string, number>();
-  const unknownOrder: ItemRef[] = [];
-  for (const entry of order) {
-    const known =
-      entry.kind === "project"
-        ? projectById.has(entry.refId)
-        : threadById.has(entry.refId);
-    if (!known) {
-      unknownOrder.push({ kind: entry.kind, refId: entry.refId });
-      continue;
-    }
-    orderIndex.set(itemKey(entry.kind, entry.refId), entry.sortIndex);
-  }
+  // Rows for vanished items stay in. Every lookup uses an id the host reports.
+  const orderIndex = new Map<string, number>(
+    order.map((entry) => [itemKey(entry.kind, entry.refId), entry.sortIndex]),
+  );
 
   // Visible set first: archived threads must not appear in the parent/child
   // forest either, or a live child would hang off an invisible parent.
@@ -268,12 +248,14 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     return a.name.localeCompare(b.name);
   });
 
-  const projectGroups: ProjectGroup[] = orderedProjects.map((project) => {
-    const threadsHere = rootsByProject.get(project.id) ?? [];
-    const sorted = sortRoots(threadsHere, orderIndex, promptedAt);
-    const groupRoots = sorted.map((thread) =>
+  const buildRoots = (rootThreads: readonly PluginSidebarThread[]) =>
+    sortRoots(rootThreads, orderIndex, promptedAt).map((thread) =>
       buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
     );
+
+  const projectGroups: ProjectGroup[] = orderedProjects.map((project) => {
+    const threadsHere = rootsByProject.get(project.id) ?? [];
+    const groupRoots = buildRoots(threadsHere);
     return {
       projectId: project.id,
       name: project.name,
@@ -289,10 +271,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
   // somewhere, or they would silently vanish from the sidebar.
   for (const [projectId, threadsHere] of rootsByProject) {
     if (projectById.has(projectId)) continue;
-    const sorted = sortRoots(threadsHere, orderIndex, promptedAt);
-    const groupRoots = sorted.map((thread) =>
-      buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
-    );
+    const groupRoots = buildRoots(threadsHere);
     projectGroups.push({
       projectId,
       name: "Unknown project",
@@ -302,9 +281,7 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     });
   }
 
-  const pinned = sortRoots(pinnedRoots, orderIndex, promptedAt).map((thread) =>
-    buildNode(thread, 0, childrenByParent, new Set([thread.id]), doneById),
-  );
+  const pinned = buildRoots(pinnedRoots);
 
   snoozed.sort(
     (a, b) => a.until - b.until || a.thread.id.localeCompare(b.thread.id),
@@ -317,7 +294,6 @@ export function resolveTree(input: ResolveInput): ResolvedTree {
     projects: projectGroups,
     orderIndex,
     promptedAt,
-    unknownOrder,
     snoozed,
     wokenEarly,
   };

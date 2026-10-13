@@ -11,17 +11,12 @@ import {
 import { LIST_HOVER_TRANSITION } from "./motion.js";
 import { Icon } from "../../components/ui/icon.js";
 
-const COARSE_POINTER_CHECK_SLOT_CLASS =
-  "h-3.5 w-3.5 max-md:pointer-coarse:h-5 max-md:pointer-coarse:w-5";
-
 type ContextMenuSubTriggerElement = React.ComponentRef<
   typeof ContextMenuPrimitive.SubTrigger
 >;
 type ContextMenuSubTriggerProps = React.ComponentPropsWithoutRef<
   typeof ContextMenuPrimitive.SubTrigger
-> & {
-  inset?: boolean;
-};
+>;
 
 type ContextMenuSubContentElement = React.ComponentRef<
   typeof ContextMenuPrimitive.SubContent
@@ -43,32 +38,15 @@ type ContextMenuItemElement = React.ComponentRef<
 type ContextMenuItemProps = React.ComponentPropsWithoutRef<
   typeof ContextMenuPrimitive.Item
 > & {
-  inset?: boolean;
   variant?: "default" | "destructive";
 };
-
-type ContextMenuCheckboxItemElement = React.ComponentRef<
-  typeof ContextMenuPrimitive.CheckboxItem
->;
-type ContextMenuCheckboxItemProps = React.ComponentPropsWithoutRef<
-  typeof ContextMenuPrimitive.CheckboxItem
->;
-
-type ContextMenuRadioItemElement = React.ComponentRef<
-  typeof ContextMenuPrimitive.RadioItem
->;
-type ContextMenuRadioItemProps = React.ComponentPropsWithoutRef<
-  typeof ContextMenuPrimitive.RadioItem
->;
 
 type ContextMenuLabelElement = React.ComponentRef<
   typeof ContextMenuPrimitive.Label
 >;
 type ContextMenuLabelProps = React.ComponentPropsWithoutRef<
   typeof ContextMenuPrimitive.Label
-> & {
-  inset?: boolean;
-};
+>;
 
 type ContextMenuSeparatorElement = React.ComponentRef<
   typeof ContextMenuPrimitive.Separator
@@ -93,7 +71,6 @@ const ContextMenuSubTrigger = React.forwardRef<
   (
     {
       className,
-      inset,
       children,
       onPointerEnter: callerPointerEnter,
       onKeyDown: callerKeyDown,
@@ -113,7 +90,6 @@ const ContextMenuSubTrigger = React.forwardRef<
           "flex cursor-default select-none items-center gap-2 min-h-7 rounded-md px-2 py-1 text-xs max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:text-sm outline-none focus:bg-state-hover focus:text-foreground data-[state=open]:bg-state-active data-[state=open]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
           LIST_HOVER_TRANSITION,
           MENU_ITEM_LAST_HOVERED_CLASS,
-          inset && "pl-8",
           className,
         )}
         {...props}
@@ -172,7 +148,6 @@ const ContextMenuItem = React.forwardRef<
   (
     {
       className,
-      inset,
       variant = "default",
       onPointerEnter: callerPointerEnter,
       onKeyDown: callerKeyDown,
@@ -193,7 +168,6 @@ const ContextMenuItem = React.forwardRef<
           "relative flex cursor-default select-none items-center gap-2 min-h-7 rounded-md px-2 py-1 text-xs max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:text-sm outline-none focus:bg-state-hover focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-3.5 [&>svg]:shrink-0",
           LIST_HOVER_TRANSITION,
           MENU_ITEM_LAST_HOVERED_CLASS,
-          inset && "pl-8",
           variant === "destructive" && "text-destructive focus:bg-destructive/10 focus:text-destructive data-[last-hovered]:bg-destructive/10 data-[last-hovered]:text-destructive",
           className,
         )}
@@ -205,109 +179,14 @@ const ContextMenuItem = React.forwardRef<
 );
 ContextMenuItem.displayName = ContextMenuPrimitive.Item.displayName;
 
-const ContextMenuCheckboxItem = React.forwardRef<
-  ContextMenuCheckboxItemElement,
-  ContextMenuCheckboxItemProps
->(
-  (
-    {
-      className,
-      children,
-      checked,
-      onPointerEnter: callerPointerEnter,
-      onKeyDown: callerKeyDown,
-      ...props
-    },
-    ref,
-  ) => {
-    const { hoverProps } = useMenuItemHover({
-      onPointerEnter: callerPointerEnter,
-      onKeyDown: callerKeyDown,
-    });
-
-    return (
-      <ContextMenuPrimitive.CheckboxItem
-        ref={ref}
-        className={cn(
-          "relative flex cursor-default select-none items-center min-h-7 rounded-md py-1 max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:text-sm pl-2 pr-8 text-xs outline-none focus:bg-state-hover focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-          LIST_HOVER_TRANSITION,
-          MENU_ITEM_LAST_HOVERED_CLASS,
-          className,
-        )}
-        checked={checked}
-        {...props}
-        {...hoverProps}
-      >
-        <span
-          className={cn(
-            "absolute right-2 flex items-center justify-center",
-            COARSE_POINTER_CHECK_SLOT_CLASS,
-          )}
-        >
-          <ContextMenuPrimitive.ItemIndicator>
-            <Icon name="Check" className={COARSE_POINTER_CHECK_SLOT_CLASS} />
-          </ContextMenuPrimitive.ItemIndicator>
-        </span>
-        {children}
-      </ContextMenuPrimitive.CheckboxItem>
-    );
-  },
-);
-ContextMenuCheckboxItem.displayName =
-  ContextMenuPrimitive.CheckboxItem.displayName;
-
-const ContextMenuRadioItem = React.forwardRef<
-  ContextMenuRadioItemElement,
-  ContextMenuRadioItemProps
->(
-  (
-    {
-      className,
-      children,
-      onPointerEnter: callerPointerEnter,
-      onKeyDown: callerKeyDown,
-      ...props
-    },
-    ref,
-  ) => {
-    const { hoverProps } = useMenuItemHover({
-      onPointerEnter: callerPointerEnter,
-      onKeyDown: callerKeyDown,
-    });
-
-    return (
-      <ContextMenuPrimitive.RadioItem
-        ref={ref}
-        className={cn(
-          "relative flex cursor-default select-none items-center min-h-7 rounded-md py-1 max-md:pointer-coarse:min-h-11 max-md:pointer-coarse:text-sm pl-8 pr-2 text-xs outline-none focus:bg-state-hover focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-          LIST_HOVER_TRANSITION,
-          MENU_ITEM_LAST_HOVERED_CLASS,
-          className,
-        )}
-        {...props}
-        {...hoverProps}
-      >
-        <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-          <ContextMenuPrimitive.ItemIndicator>
-            <Icon name="Circle" className="h-2 w-2 fill-current" />
-          </ContextMenuPrimitive.ItemIndicator>
-        </span>
-        {children}
-      </ContextMenuPrimitive.RadioItem>
-    );
-  },
-);
-ContextMenuRadioItem.displayName = ContextMenuPrimitive.RadioItem.displayName;
-
 const ContextMenuLabel = React.forwardRef<
   ContextMenuLabelElement,
   ContextMenuLabelProps
->(({ className, inset, ...props }, ref) => (
+>(({ className, ...props }, ref) => (
   <ContextMenuPrimitive.Label
     ref={ref}
     className={cn(
       "px-2 py-[0.3125rem] text-xs font-medium text-muted-foreground",
-      inset && "pl-8",
       className,
     )}
     {...props}
@@ -345,15 +224,11 @@ export {
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
-  
-  
   ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuGroup,
-  
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-  
 };

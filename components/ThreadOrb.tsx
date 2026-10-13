@@ -51,7 +51,6 @@ export function ThreadOrb({ orb, className }: { orb: AgentOrb; className?: strin
       <ThinkingOrb
         state={orb.state}
         size={20}
-        theme="auto"
         aria-label={orb.label}
         className="block origin-center"
         style={{ transform: "scale(0.8)" }}

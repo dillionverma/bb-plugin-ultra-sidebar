@@ -97,8 +97,7 @@ export async function findProjectArtwork(
 
   const rankedPaths = Array.from(paths).sort(
     (left, right) =>
-      projectIconScore(right, manifestArtwork.path) -
-        projectIconScore(left, manifestArtwork.path) ||
+      projectIconScore(right) - projectIconScore(left) ||
       left.localeCompare(right),
   );
 
@@ -325,9 +324,7 @@ export function projectIconMimeType(path: string): string | null {
   }
 }
 
-export function projectIconScore(path: string, manifestIcon: string | null): number {
-  if (path === manifestIcon) return 10_000;
-
+export function projectIconScore(path: string): number {
   const lower = path.toLowerCase();
   const name = lower.split("/").at(-1) ?? lower;
   const depth = lower.split("/").length - 1;

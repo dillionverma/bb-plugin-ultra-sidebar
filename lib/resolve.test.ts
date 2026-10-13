@@ -97,8 +97,6 @@ describe("resolveTree", () => {
       showArchived: false,
     });
     expect(tree.projects).toEqual([]);
-    // Orphans must never be derived from a snapshot that is not ready.
-    expect(tree.unknownOrder).toEqual([]);
   });
 
   it("files every thread under its own project, projects A to Z", () => {
@@ -290,12 +288,11 @@ describe("resolveTree", () => {
     expect(tree.projects.length).toBeGreaterThan(0);
   });
 
-  it("reports an order row for a vanished thread without rendering it", () => {
+  it("renders nothing for an order row whose thread vanished", () => {
     const tree = run(
       [thread({ id: "t1", projectId: "p1" })],
       [{ kind: "thread", refId: "gone", sortIndex: 0 }],
     );
-    expect(tree.unknownOrder).toEqual([{ kind: "thread", refId: "gone" }]);
     expect(group(tree, "p1").threadCount).toBe(1);
   });
 

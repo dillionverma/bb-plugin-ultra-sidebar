@@ -5,7 +5,7 @@
 // one ticker serves every orb on the page, skips the ones scrolled out of
 // view, and stops when the window is hidden or no orb is left.
 import { useEffect, useRef, useState, type CSSProperties, type CanvasHTMLAttributes } from "react";
-import { MODE_DRAWS, resolvePreset, type OrbSize, type OrbState, type OrbTheme } from "thinking-orbs";
+import { MODE_DRAWS, resolvePreset, type OrbSize, type OrbState } from "thinking-orbs";
 
 interface LiveOrb {
   draw(time: number): void;
@@ -48,11 +48,9 @@ function mediaQuery(query: string): MediaQueryList | null {
 }
 
 /** bb's `dark` class on <html>, else the OS preference. */
-function useDarkTheme(theme: OrbTheme): boolean {
+function useDarkTheme(): boolean {
   const [dark, setDark] = useState(true);
   useEffect(() => {
-    if (theme === "dark") return setDark(true);
-    if (theme === "light") return setDark(false);
     const media = mediaQuery("(prefers-color-scheme: dark)");
     const read = () => {
       const root = document.documentElement;
@@ -72,7 +70,7 @@ function useDarkTheme(theme: OrbTheme): boolean {
       media?.removeEventListener("change", read);
       observer.disconnect();
     };
-  }, [theme]);
+  }, []);
   return dark;
 }
 
@@ -92,24 +90,17 @@ function useReducedMotion(): boolean {
 export interface ThinkingOrbProps extends Omit<CanvasHTMLAttributes<HTMLCanvasElement>, "style"> {
   state: OrbState;
   size?: OrbSize;
-  theme?: OrbTheme;
-  /** Multiplier on the preset's baked speed. */
-  speed?: number;
-  paused?: boolean;
   style?: CSSProperties;
 }
 
 export function ThinkingOrb({
   state,
   size = 20,
-  theme = "auto",
-  speed = 1,
-  paused = false,
   style,
   ...rest
 }: ThinkingOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const dark = useDarkTheme(theme);
+  const dark = useDarkTheme();
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -122,16 +113,15 @@ export function ThinkingOrb({
     if (context === null) return;
     const preset = resolvePreset(state, size);
     const drawMode = MODE_DRAWS[preset.mode];
-    const rate = preset.speed * speed;
     const draw = (time: number) => {
       context.setTransform(scale, 0, 0, scale, 0, 0);
       context.clearRect(0, 0, size, size);
-      drawMode(context, size, time * rate, dark, preset.opts);
+      drawMode(context, size, time * preset.speed, dark, preset.opts);
     };
 
-    // One still frame, and no loop, when motion is off or the orb is paused.
+    // One still frame, and no loop, when motion is off.
     draw(reducedMotion ? 0.6 : performance.now() / 1000);
-    if (reducedMotion || paused) return;
+    if (reducedMotion) return;
 
     const orb: LiveOrb = { draw, visible: true };
     live.add(orb);
@@ -148,7 +138,7 @@ export function ThinkingOrb({
       live.delete(orb);
       if (live.size === 0) stopTicking();
     };
-  }, [state, size, dark, speed, paused, reducedMotion]);
+  }, [state, size, dark, reducedMotion]);
 
   return (
     <canvas

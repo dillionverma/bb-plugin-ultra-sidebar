@@ -16,7 +16,7 @@ import {
   getOverlayTriggerClassName,
   preventOverlayTriggerSelection,
 } from "./overlay-trigger.js";
-import { usePointerCoarse } from "./hooks/use-pointer-coarse.js";
+import { useMediaQuery } from "./hooks/use-media-query.js";
 
 const ResponsivePopoverContext =
   React.createContext<ResponsiveOverlayContextValue>({
@@ -107,10 +107,7 @@ PopoverTrigger.displayName = "PopoverTrigger";
 const PopoverContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
-    dismissOnOutsideInteraction?: boolean;
     mobileTitle?: string;
-    mobileClassName?: string;
-    onMobileContentAnimationEnd?: (open: boolean) => void;
     autoFocusRef?: React.RefObject<HTMLElement | null>;
   }
 >(
@@ -120,11 +117,7 @@ const PopoverContent = React.forwardRef<
       align = "center",
       sideOffset = 4,
       children,
-      dismissOnOutsideInteraction = true,
-      onInteractOutside,
       mobileTitle,
-      mobileClassName,
-      onMobileContentAnimationEnd,
       onOpenAutoFocus,
       autoFocusRef,
       ...props
@@ -132,7 +125,7 @@ const PopoverContent = React.forwardRef<
     ref,
   ) => {
     const { isCompactViewport, open, onOpenChange } = useResponsivePopover();
-    const isPointerCoarse = usePointerCoarse();
+    const isPointerCoarse = useMediaQuery("(pointer: coarse)");
     const scopeProps = usePortalScopeProps();
 
     React.useEffect(() => {
@@ -154,9 +147,6 @@ const PopoverContent = React.forwardRef<
           open={open}
           onOpenChange={onOpenChange}
           srLabel={mobileTitle ?? "Options"}
-          closeOnBackdropClick={dismissOnOutsideInteraction}
-          contentClassName={mobileClassName}
-          onContentAnimationEnd={onMobileContentAnimationEnd}
         >
           <div
             ref={ref}
@@ -189,10 +179,6 @@ const PopoverContent = React.forwardRef<
             className,
           )}
           {...props}
-          onInteractOutside={(event) => {
-            if (!dismissOnOutsideInteraction) event.preventDefault();
-            onInteractOutside?.(event);
-          }}
         >
           {children}
         </PopoverPrimitive.Content>

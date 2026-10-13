@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -21,9 +20,7 @@ import {
   CancelCircleIcon,
   CheckListIcon,
   CheckmarkCircle02Icon,
-  CircleIcon,
   Clock01Icon,
-  ComputerTerminal01Icon,
   Copy01Icon,
   DashedLineCircleIcon,
   Delete02Icon,
@@ -37,7 +34,6 @@ import {
   GitPullRequestIcon,
   InformationCircleIcon,
   Layout2ColumnIcon,
-  Loading03Icon,
   Mail02Icon,
   MailOpen01Icon,
   MoreHorizontalIcon,
@@ -48,12 +44,10 @@ import {
   PlusSignIcon,
   Refresh01Icon,
   RepeatIcon,
-  SidebarLeftIcon,
   SlidersHorizontalIcon,
   Sorting01Icon,
   Tick02Icon,
   WorkflowCircle03Icon,
-  ZapIcon,
 } from "@hugeicons/core-free-icons";
 
 // BB's icon names, drawn with the same Hugeicons glyphs BB uses for them, so
@@ -73,12 +67,10 @@ const ICONS = {
   ChevronUp: ArrowUp01Icon,
   ChevronsDown: ArrowDownDoubleIcon,
   ChevronsUp: ArrowUpDoubleIcon,
-  Circle: CircleIcon,
   CircleCheck: CheckmarkCircle02Icon,
   CircleX: CancelCircleIcon,
   Clock: Clock01Icon,
   Columns2: Layout2ColumnIcon,
-  ComputerTerminal01: ComputerTerminal01Icon,
   Copy: Copy01Icon,
   CornerDownLeft: ArrowMoveDownLeftIcon,
   Edit: Edit02Icon,
@@ -91,13 +83,11 @@ const ICONS = {
   GitPullRequestDraft: GitPullRequestDraftIcon,
   Info: InformationCircleIcon,
   ListTodo: CheckListIcon,
-  Loading: Loading03Icon,
   Mail: Mail02Icon,
   MailOpen: MailOpen01Icon,
   MessageSquare: BubbleChatIcon,
   MessageSquarePlus: BubbleChatAddIcon,
   MoreHorizontal: MoreHorizontalIcon,
-  PanelLeft: SidebarLeftIcon,
   Pause: PauseIcon,
   Pin: PinIcon,
   PinOff: PinOffIcon,
@@ -111,7 +101,6 @@ const ICONS = {
   Trash2: Delete02Icon,
   Workflow: WorkflowCircle03Icon,
   X: Cancel01Icon,
-  Zap: ZapIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 export type IconName = keyof typeof ICONS;
@@ -119,13 +108,11 @@ export type IconName = keyof typeof ICONS;
 export function Icon({
   name,
   className,
-  style,
   "aria-hidden": ariaHidden,
   "aria-label": ariaLabel,
 }: {
   name: IconName;
   className?: string;
-  style?: CSSProperties;
   "aria-hidden"?: boolean | "true" | "false";
   "aria-label"?: string;
 }) {
@@ -133,7 +120,6 @@ export function Icon({
     <HugeiconsIcon
       icon={ICONS[name]}
       className={className}
-      style={style}
       aria-hidden={ariaHidden}
       aria-label={ariaLabel}
       data-icon={name}

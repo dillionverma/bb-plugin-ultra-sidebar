@@ -53,7 +53,6 @@ interface MenuItemHoverHandlers {
 }
 
 export function useMenuItemHover(handlers?: MenuItemHoverHandlers): {
-  isLastHovered: boolean;
   hoverProps: MenuItemHoverProps;
 } {
   const id = React.useId();
@@ -83,7 +82,6 @@ export function useMenuItemHover(handlers?: MenuItemHoverHandlers): {
   );
 
   return {
-    isLastHovered,
     hoverProps: {
       "data-last-hovered": isLastHovered ? "" : undefined,
       onPointerEnter,

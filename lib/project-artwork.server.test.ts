@@ -33,10 +33,9 @@ describe("project artwork policy", () => {
     expect(normalizeProjectGlyphName(input)).toBe(expected);
   });
 
-  it("prefers declared branding, then common public icons", () => {
-    expect(projectIconScore("icons/brand.svg", "icons/brand.svg")).toBe(10_000);
-    expect(projectIconScore("public/favicon.svg", null)).toBeGreaterThan(
-      projectIconScore("src/deep/company-logo-light.png", null),
+  it("ranks a public favicon above a deep, themed logo", () => {
+    expect(projectIconScore("public/favicon.svg")).toBeGreaterThan(
+      projectIconScore("src/deep/company-logo-light.png"),
     );
   });
 

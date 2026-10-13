@@ -114,8 +114,6 @@ export interface Store {
    * the other.
    */
   recordPrompt(threadId: string, at: number): SidebarState;
-  /** Drop rows for projects/threads that no longer exist. */
-  pruneOrder(items: ItemRef[]): { removed: number; state: SidebarState };
 }
 
 export function createStore(
@@ -276,21 +274,6 @@ export function createStore(
           `DELETE FROM item_order WHERE kind = 'thread' AND ref_id = ?`,
         ).run(threadId);
       }).state;
-    },
-
-    pruneOrder(items) {
-      if (items.length === 0) return { removed: 0, state: readState() };
-      const { result, state } = withWrite(() => {
-        const remove = db.prepare(
-          `DELETE FROM item_order WHERE kind = ? AND ref_id = ?`,
-        );
-        let removed = 0;
-        for (const item of items) {
-          removed += remove.run(item.kind, item.refId).changes;
-        }
-        return removed;
-      });
-      return { removed: result, state };
     },
   };
 }

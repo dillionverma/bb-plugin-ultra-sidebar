@@ -182,7 +182,6 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.null(),
   },
-  /** Re-submit the failed turn; "sent" ran now, "queued" waits its turn. */
   "threads.handoffOptions": {
     input: z.object({ threadId: z.string().min(1), providerId: z.string().min(1).optional() }),
     output: z.object({
@@ -196,6 +195,7 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: z.string().min(1), target: z.object({ providerId: z.string().min(1), model: z.string().min(1) }).optional() }),
     output: z.object({ threadId: z.string() }),
   },
+  /** Re-submit the failed turn; "sent" ran now, "queued" waits its turn. */
   "threads.retry": {
     input: z.object({ threadId: z.string() }),
     output: z.object({ delivery: z.enum(["sent", "queued"]) }),
@@ -217,11 +217,6 @@ export const rpcContract = defineRpcContract({
     }),
     output: z.object({ entries: z.array(pullRequestSchema) }),
   },
-  /**
-   * The model a thread runs on is deliberately not in the sidebar payload —
-   * it only exists behind bb.sdk.threads.defaultExecutionOptions, which is
-   * server-side. Batched so one sidebar paint is one request.
-   */
   "threads.queueSummary": {
     input: z.object({}),
     output: z.object({ entries: z.array(z.object({
@@ -229,6 +224,11 @@ export const rpcContract = defineRpcContract({
       retry: z.boolean(), failed: z.boolean(),
     })) }),
   },
+  /**
+   * The model a thread runs on is deliberately not in the sidebar payload.
+   * It only exists behind bb.sdk.threads.defaultExecutionOptions, which is
+   * server-side. Batched so one sidebar paint is one request.
+   */
   "threads.execution": {
     input: z.object({ threadIds: z.array(z.string()).min(1).max(300) }),
     output: z.object({ entries: z.array(executionSchema) }),
@@ -804,9 +804,10 @@ export default async function plugin(bb: BbPluginApi) {
           case "order": {
             const collected = collectItems(args);
             if ("error" in collected) return fail(collected.error);
-            // The given items lead; everything already placed follows, so a
-            // partial list never scrambles the rest.
-            const existing = store
+            // Everything already placed keeps its order and the given items
+            // follow it, in the order given, so a partial list never
+            // scrambles the rest.
+            let placements: Placement[] = store
               .readState()
               .order.map(toPlacement)
               .filter(
@@ -817,7 +818,6 @@ export default async function plugin(bb: BbPluginApi) {
                       item.refId === placement.refId,
                   ),
               );
-            let placements: Placement[] = [...collected.items, ...existing];
             for (const item of collected.items) {
               placements = placeItem(placements, item, {
                 anchorRefId: null,

@@ -4,15 +4,12 @@ import { Slot } from "@radix-ui/react-slot";
 
 import {
   blurActiveKeyboardInputBeforeOverlayOpen,
-  blurActiveKeyboardInputBeforeOverlayClose,
   blurActiveKeyboardInputWithin,
   getOverlayTriggerClassName,
   preventOverlayTriggerSelection,
 } from "./overlay-trigger.js";
 import { useIsCompactViewport } from "./hooks/use-compact-viewport.js";
-import { usePointerCoarse } from "./hooks/use-pointer-coarse.js";
 import { usePortalScopeProps } from "../../lib/portal-scope.js";
-import { cn } from "../../lib/utils.js";
 
 export interface ResponsiveOverlayContextValue {
   isCompactViewport: boolean;
@@ -105,23 +102,12 @@ function useDrawerKeyboardInset(
   }, [open, panelRef]);
 }
 
-function useResponsiveOverlayBehavior() {
-  const presentation = useIsCompactViewport() ? "drawer" : "floating";
-  const isPointerCoarse = usePointerCoarse();
-
-  return {
-    presentation,
-    supportsHover: presentation === "floating" && !isPointerCoarse,
-  };
-}
-
 export function useResponsiveRoot(
   controlledOpen: boolean | undefined,
   controlledOnChange: ((open: boolean) => void) | undefined,
   defaultOpen: boolean = false,
 ): ResponsiveOverlayContextValue {
-  const { presentation } = useResponsiveOverlayBehavior();
-  const isCompactViewport = presentation === "drawer";
+  const isCompactViewport = useIsCompactViewport();
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
@@ -129,7 +115,7 @@ export function useResponsiveRoot(
   const onOpenChange = React.useCallback(
     (next: boolean) => {
       if (open && !next && isCompactViewport) {
-        blurActiveKeyboardInputBeforeOverlayClose();
+        blurActiveKeyboardInputWithin(null);
       }
       if (!isControlled) {
         setInternalOpen(next);
@@ -261,25 +247,10 @@ export function stripRadixContentProps<T extends Record<string, unknown>>(
   return result as Omit<T, RadixContentPropName>;
 }
 
-interface ResponsiveDrawerShellProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  closeOnBackdropClick?: boolean;
-  onAfterCloseAutoFocus?: () => void;
-  srLabel?: string;
-  labelledBy?: string;
-  describedBy?: string;
-  contentClassName?: string;
-  onContentAnimationEnd?: (open: boolean) => void;
-  children: React.ReactNode;
-}
-
 function useResponsiveDrawerRealization({
   open,
-  enabled = true,
 }: {
   open: boolean;
-  enabled?: boolean;
 }): { isContentRealized: boolean; realizeContent: () => void } {
   const [isContentRealized, setIsContentRealized] = React.useState(false);
   const realizeContent = React.useCallback(
@@ -288,7 +259,7 @@ function useResponsiveDrawerRealization({
   );
 
   React.useEffect(() => {
-    if (!enabled || !open || isContentRealized) {
+    if (!open || isContentRealized) {
       return;
     }
 
@@ -315,44 +286,28 @@ function useResponsiveDrawerRealization({
       }
       window.clearTimeout(fallback);
     };
-  }, [enabled, isContentRealized, open, realizeContent]);
+  }, [isContentRealized, open, realizeContent]);
 
   return {
-    isContentRealized: enabled && isContentRealized,
+    isContentRealized,
     realizeContent,
   };
 }
 
 export function ResponsiveDrawerShell({
-  open,
-  onOpenChange,
-  onAfterCloseAutoFocus,
-  closeOnBackdropClick = true,
-  srLabel,
-  labelledBy,
-  describedBy,
-  contentClassName,
-  onContentAnimationEnd,
   children,
-}: ResponsiveDrawerShellProps) {
-  const { isContentRealized } = useResponsiveDrawerRealization({ open });
+  ...props
+}: PersistentResponsiveDrawerShellProps) {
+  const { isContentRealized } = useResponsiveDrawerRealization({
+    open: props.open,
+  });
 
-  if (!open && !isContentRealized) {
+  if (!props.open && !isContentRealized) {
     return null;
   }
 
   return (
-    <PersistentResponsiveDrawerShell
-      open={open}
-      onOpenChange={onOpenChange}
-      onAfterCloseAutoFocus={onAfterCloseAutoFocus}
-      closeOnBackdropClick={closeOnBackdropClick}
-      srLabel={srLabel}
-      labelledBy={labelledBy}
-      describedBy={describedBy}
-      contentClassName={contentClassName}
-      onContentAnimationEnd={onContentAnimationEnd}
-    >
+    <PersistentResponsiveDrawerShell {...props}>
       {isContentRealized ? (
         children
       ) : (
@@ -369,18 +324,15 @@ export function ResponsiveDrawerShell({
 interface PersistentResponsiveDrawerShellProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  closeOnBackdropClick?: boolean;
-  onAfterCloseAutoFocus?: () => void;
   srLabel?: string;
   labelledBy?: string;
   describedBy?: string;
-  contentClassName?: string;
-  motionDurationMs?: number;
-  onContentAnimationEnd?: (open: boolean) => void;
   children: React.ReactNode;
 }
 
 const PERSISTENT_DRAWER_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+const PERSISTENT_DRAWER_TRANSITION = `transform 220ms ${PERSISTENT_DRAWER_EASING}`;
+const PERSISTENT_DRAWER_BACKDROP_TRANSITION = `opacity 220ms ${PERSISTENT_DRAWER_EASING}`;
 const PERSISTENT_DRAWER_CLOSE_RATIO = 0.25;
 const PERSISTENT_DRAWER_CLOSE_VELOCITY_PX_PER_SEC = 450;
 const PERSISTENT_DRAWER_FOCUSABLE_SELECTOR = [
@@ -514,7 +466,6 @@ function registerOpenDrawer(
 }
 
 interface UsePersistentOverlayFocusArgs {
-  onAfterCloseAutoFocus?: () => void;
   onBeforeCloseAutoFocus?: () => void;
   open: boolean;
   panelRef: React.RefObject<HTMLElement | null>;
@@ -522,7 +473,6 @@ interface UsePersistentOverlayFocusArgs {
 }
 
 function usePersistentOverlayFocus({
-  onAfterCloseAutoFocus,
   onBeforeCloseAutoFocus,
   open,
   panelRef,
@@ -570,20 +520,16 @@ function usePersistentOverlayFocus({
               ) {
                 returnFocus.focus({ preventScroll: true });
               }
-              onAfterCloseAutoFocus?.();
             });
             cancelDeferredFocus = () => ownerWindow.cancelAnimationFrame(frame);
           }
         }
       }
       returnFocusRef.current = null;
-      if (cancelDeferredFocus === undefined) {
-        onAfterCloseAutoFocus?.();
-      }
     }
     previousOpenRef.current = open;
     return cancelDeferredFocus;
-  }, [onAfterCloseAutoFocus, onBeforeCloseAutoFocus, open]);
+  }, [onBeforeCloseAutoFocus, open]);
 }
 
 type PersistentDrawerDrag = {
@@ -598,24 +544,16 @@ type PersistentDrawerDrag = {
 function PersistentResponsiveDrawerShell({
   open,
   onOpenChange,
-  onAfterCloseAutoFocus,
-  closeOnBackdropClick = true,
   srLabel,
   labelledBy,
   describedBy,
-  contentClassName,
-  motionDurationMs = 220,
-  onContentAnimationEnd,
   children,
 }: PersistentResponsiveDrawerShellProps) {
   const panelRef = React.useRef<HTMLDivElement>(null);
   const backdropRef = React.useRef<HTMLDivElement>(null);
   const dragRef = React.useRef<PersistentDrawerDrag | null>(null);
-  const settledStateRef = React.useRef<boolean | null>(null);
   const labelId = React.useId();
   const portalScopeProps = usePortalScopeProps();
-  const transition = `transform ${motionDurationMs}ms ${PERSISTENT_DRAWER_EASING}`;
-  const backdropTransition = `opacity ${motionDurationMs}ms ${PERSISTENT_DRAWER_EASING}`;
   const onOpenChangeRef = React.useRef(onOpenChange);
   React.useLayoutEffect(() => {
     onOpenChangeRef.current = onOpenChange;
@@ -631,7 +569,6 @@ function PersistentResponsiveDrawerShell({
   }, []);
 
   usePersistentOverlayFocus({
-    onAfterCloseAutoFocus,
     onBeforeCloseAutoFocus: prepareCloseAutoFocus,
     open,
     panelRef,
@@ -640,26 +577,6 @@ function PersistentResponsiveDrawerShell({
 
   useDrawerKeyboardInset(panelRef, open);
 
-  const reportSettled = React.useCallback(
-    (settledOpen: boolean) => {
-      if (settledStateRef.current === settledOpen) {
-        return;
-      }
-      settledStateRef.current = settledOpen;
-      onContentAnimationEnd?.(settledOpen);
-    },
-    [onContentAnimationEnd],
-  );
-
-  React.useEffect(() => {
-    settledStateRef.current = null;
-    const timeout = window.setTimeout(
-      () => reportSettled(open),
-      motionDurationMs + 50,
-    );
-    return () => window.clearTimeout(timeout);
-  }, [motionDurationMs, open, reportSettled]);
-
   const setDragPosition = React.useCallback(
     (offsetY: number, height: number, animate: boolean) => {
       const panel = panelRef.current;
@@ -667,14 +584,16 @@ function PersistentResponsiveDrawerShell({
       if (panel === null || backdrop === null) {
         return;
       }
-      panel.style.transition = animate ? transition : "none";
+      panel.style.transition = animate ? PERSISTENT_DRAWER_TRANSITION : "none";
       panel.style.transform = `translate3d(0, ${offsetY}px, 0)`;
-      backdrop.style.transition = animate ? backdropTransition : "none";
+      backdrop.style.transition = animate
+        ? PERSISTENT_DRAWER_BACKDROP_TRANSITION
+        : "none";
       backdrop.style.opacity = String(
         Math.max(0, Math.min(1, 1 - offsetY / height)),
       );
     },
-    [backdropTransition, transition],
+    [],
   );
 
   const handleDragStart = React.useCallback(
@@ -762,9 +681,9 @@ function PersistentResponsiveDrawerShell({
         style={{
           opacity: open ? 1 : 0,
           pointerEvents: open ? "auto" : "none",
-          transition: backdropTransition,
+          transition: PERSISTENT_DRAWER_BACKDROP_TRANSITION,
         }}
-        onClick={closeOnBackdropClick ? requestClose : undefined}
+        onClick={requestClose}
         onTouchMove={(event) => event.preventDefault()}
       />
       <div
@@ -782,22 +701,11 @@ function PersistentResponsiveDrawerShell({
         inert={!open}
         role="dialog"
         tabIndex={-1}
-        className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[calc(92dvh-var(--bb-drawer-keyboard-inset,0px))] flex-col rounded-t-xl border bg-background outline-none",
-          contentClassName,
-        )}
+        className="fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[calc(92dvh-var(--bb-drawer-keyboard-inset,0px))] flex-col rounded-t-xl border bg-background outline-none"
         style={{
           transform: open ? "translate3d(0, 0, 0)" : "translate3d(0, 100%, 0)",
-          transition,
+          transition: PERSISTENT_DRAWER_TRANSITION,
           willChange: open ? "transform" : undefined,
-        }}
-        onTransitionEnd={(event) => {
-          if (
-            event.currentTarget === event.target &&
-            event.propertyName === "transform"
-          ) {
-            reportSettled(open);
-          }
         }}
       >
         <div

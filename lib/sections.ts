@@ -6,6 +6,7 @@
 // teach it two layouts, this takes its output and files the rows. Grouping
 // stays a view concern.
 import {
+  ATTENTION_INDICATORS,
   countRows,
   sortRoots,
   type ProjectGroup,
@@ -122,15 +123,7 @@ export function buildSections(input: SectionsInput): Section[] {
     // and a bucket that only appears once something lands in it reads as the
     // sidebar reshuffling itself.
     for (const bucket of STATUS_BUCKETS) {
-      sections.push(
-        statusSection(
-          bucket.key,
-          bucket.label,
-          byBucket.get(bucket.key) ?? [],
-          tree.orderIndex,
-          tree.promptedAt,
-        ),
-      );
+      sections.push(statusSection(bucket.key, byBucket.get(bucket.key) ?? [], tree));
     }
     return sections;
   }
@@ -154,15 +147,7 @@ export function buildSections(input: SectionsInput): Section[] {
   for (const bucket of PARKED_BUCKETS) {
     const nodes = parked.get(bucket) ?? [];
     if (nodes.length === 0 && !dragging) continue;
-    sections.push(
-      statusSection(
-        bucket,
-        STATUS_LABEL[bucket],
-        nodes,
-        tree.orderIndex,
-        tree.promptedAt,
-      ),
-    );
+    sections.push(statusSection(bucket, nodes, tree));
   }
   return sections;
 }
@@ -189,22 +174,20 @@ function projectSection(group: ProjectGroup, roots: ThreadNode[]): Section {
  */
 function statusSection(
   bucket: StatusBucket,
-  label: string,
   nodes: readonly ThreadNode[],
-  orderIndex: ReadonlyMap<string, number>,
-  promptedAt: ReadonlyMap<string, number>,
+  tree: ResolvedTree,
 ): Section {
-  const roots = orderBucket(nodes, orderIndex, promptedAt);
+  const roots = orderBucket(nodes, tree.orderIndex, tree.promptedAt);
   return {
     id: statusSectionId(bucket),
-    name: label,
+    name: STATUS_LABEL[bucket],
     kind: "status",
     projectId: null,
     bucket,
     roots,
     threadCount: countRows(roots),
     showProject: true,
-    manual: roots.some((node) => orderIndex.has(`thread:${node.thread.id}`)),
+    manual: roots.some((node) => tree.orderIndex.has(`thread:${node.thread.id}`)),
   };
 }
 
@@ -240,13 +223,11 @@ function orderBucket(
   ];
 }
 
-const NEEDS_PERSON_INDICATORS = new Set(["waiting-for-input", "unread-error"]);
-
 function needsPerson(node: ThreadNode): boolean {
   return (
     node.thread.hasPendingInteraction ||
     node.hasPendingDescendant ||
-    NEEDS_PERSON_INDICATORS.has(node.thread.indicator)
+    ATTENTION_INDICATORS.has(node.thread.indicator)
   );
 }
 
