@@ -11,7 +11,7 @@
 //     place that explains every value at once.
 import type { ReactNode } from "react";
 import type { ThreadPullRequest } from "@/hooks/useThreadPullRequests";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import {
   Tooltip,
   TooltipContent,
@@ -23,7 +23,7 @@ import { cn, formatHomePathForDisplay } from "@/lib/utils";
  * A badge that opens something. It sits inside the row's anchor, so every
  * event that would open, drag or rename the row is stopped here.
  */
-export function LinkBadge({
+function LinkBadge({
   icon,
   label,
   tip,
@@ -31,7 +31,7 @@ export function LinkBadge({
   className,
   maxWidth = "8rem",
 }: {
-  icon: string;
+  icon: IconName;
   label: string;
   /** What the hover says: the folder path, the pull request title. */
   tip: ReactNode;
@@ -72,14 +72,14 @@ export function LinkBadge({
   );
 }
 
-export function Badge({
+function Badge({
   icon,
   label,
   tip,
   className,
   maxWidth = "8rem",
 }: {
-  icon: string;
+  icon: IconName;
   label: string;
   /** What the hover says; omitted, the badge has no tooltip. */
   tip?: ReactNode;
@@ -111,33 +111,9 @@ export function Badge({
 }
 
 /** The tooltip for a folder link: the path, and where it is if not here. */
-export function folderTip(path: string, hostName: string | null): string {
+function folderTip(path: string, hostName: string | null): string {
   const shown = formatHomePathForDisplay(path);
   return hostName === null ? shown : `${shown} · ${hostName}`;
-}
-
-export function ProjectBadge({
-  name,
-  folder,
-  onOpenFolder,
-}: {
-  name: string;
-  /** The checkout behind this row, once known; null keeps the badge inert. */
-  folder?: { path: string; hostName: string | null } | null;
-  onOpenFolder?(): void;
-}) {
-  if (folder == null || onOpenFolder === undefined) {
-    return <Badge icon="Folder" label={name} tip={`Project · ${name}`} maxWidth="7rem" />;
-  }
-  return (
-    <LinkBadge
-      icon="Folder"
-      label={name}
-      maxWidth="7rem"
-      tip={folderTip(folder.path, folder.hostName)}
-      onOpen={onOpenFolder}
-    />
-  );
 }
 
 export function BranchBadge({
@@ -160,10 +136,6 @@ export function BranchBadge({
       onOpen={onOpenFolder}
     />
   );
-}
-
-export function MachineBadge({ name }: { name: string }) {
-  return <Badge icon="ComputerTerminal01" label={name} tip={`Machine · ${name}`} maxWidth="5rem" />;
 }
 
 export function ModelBadge({ model }: { model: string }) {
@@ -213,7 +185,7 @@ export const PR_ATTENTION: Record<string, { text: string; className: string }> =
   none: { text: "Open", className: "text-muted-foreground" },
 };
 
-function prIcon(pullRequest: ThreadPullRequest): string {
+function prIcon(pullRequest: ThreadPullRequest): IconName {
   if (pullRequest.state === "merged") return "CircleCheck";
   if (pullRequest.state === "closed") return "CircleX";
   if (pullRequest.attention === "checks_failed") return "AlertCircle";

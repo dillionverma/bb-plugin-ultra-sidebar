@@ -8,7 +8,7 @@
 // Shared by server.ts (reduction) and the app (types), so it must stay free
 // of node and react imports.
 
-export type AgentActivityKind =
+type AgentActivityKind =
   | "starting"
   | "thinking"
   | "writing"
@@ -26,7 +26,7 @@ export type AgentActivityKind =
   | "image"
   | "working";
 
-export interface AgentActivity {
+interface AgentActivity {
   kind: AgentActivityKind;
   /** Two or three words for the row: "Running grep", "Editing app.tsx". */
   label: string;
@@ -39,11 +39,6 @@ export interface AgentActivity {
 
 /** The realtime channel a changed activity is published on. */
 export const AGENT_ACTIVITY = "agent-activity";
-
-export interface AgentActivityUpdate {
-  threadId: string;
-  activity: AgentActivity | null;
-}
 
 /** The slice of an event row this reducer reads. Kept loose on purpose: bb
  * adds item kinds over time and an unknown one must fold to "Working", not
@@ -365,7 +360,7 @@ export function applyAgentEvent(state: AgentActivityState, event: AgentEvent): b
   return !sameActivity(before, state.current);
 }
 
-export function sameActivity(a: AgentActivity | null, b: AgentActivity | null): boolean {
+function sameActivity(a: AgentActivity | null, b: AgentActivity | null): boolean {
   if (a === null || b === null) return a === b;
   return a.kind === b.kind && a.label === b.label && a.detail === b.detail;
 }

@@ -11,7 +11,7 @@ import { DockAction, DockHeader, DockRow } from "./DockRow";
 import { ProjectIcon } from "./ProjectIcon";
 import { StatusIcon } from "./StatusIcon";
 
-export const SNOOZED_EXPANDED_KEY = "bb-workspace-sidebar:snoozed-expanded:v1";
+const SNOOZED_EXPANDED_KEY = "bb-workspace-sidebar:snoozed-expanded:v1";
 
 /**
  * The threads a person has parked until later. They leave the list, but not

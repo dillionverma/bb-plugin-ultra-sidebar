@@ -10,7 +10,7 @@ import { useSidebar } from "./sidebar-context";
 
 // Mounted by bb at /api/v1/plugins/<id>/http/<path>; the id is the package
 // name without its bb-plugin- prefix.
-export const PROJECT_ICON_URL = "/api/v1/plugins/workspace-sidebar/http/project-icon";
+const PROJECT_ICON_URL = "/api/v1/plugins/workspace-sidebar/http/project-icon";
 
 export function ProjectIcon({
   projectId,

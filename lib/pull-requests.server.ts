@@ -29,7 +29,7 @@ export const PULL_REQUEST_MIGRATION = `CREATE TABLE IF NOT EXISTS thread_pull_re
      updated_at    INTEGER NOT NULL
    )`;
 
-export interface PullRequestBinding extends PullRequestRef {
+interface PullRequestBinding extends PullRequestRef {
   snapshot: PullRequestSnapshot;
 }
 
@@ -116,7 +116,7 @@ export function createPullRequestBindings(db: Database): PullRequestBindings {
 }
 
 /** One `gh pr view` by number. Works with the head branch long deleted. */
-export function fetchPullRequest(
+function fetchPullRequest(
   ref: PullRequestRef,
 ): Promise<PullRequestSnapshot | null> {
   return new Promise((resolve) => {

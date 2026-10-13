@@ -18,7 +18,7 @@
 /** The statuses a person can set by hand. Everything else is derived. */
 export type ManualStatus = "backlog" | "done" | "canceled";
 
-export const MANUAL_STATUSES: readonly ManualStatus[] = [
+const MANUAL_STATUSES: readonly ManualStatus[] = [
   "backlog",
   "done",
   "canceled",
@@ -105,7 +105,7 @@ export function statusBucket(
   return "in-progress";
 }
 
-export const STATUS_SECTION_PREFIX = "status:";
+const STATUS_SECTION_PREFIX = "status:";
 
 export function statusSectionId(bucket: StatusBucket): string {
   return `${STATUS_SECTION_PREFIX}${bucket}`;

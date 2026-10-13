@@ -1,5 +1,5 @@
 export const THREAD_HISTORY_LIMIT = 50;
-export const THREAD_HISTORY_STORAGE_KEY = "bb-workspace-sidebar:thread-history:v1";
+const THREAD_HISTORY_STORAGE_KEY = "bb-workspace-sidebar:thread-history:v1";
 
 export interface ThreadHistory {
   readonly entries: readonly string[];
@@ -22,7 +22,7 @@ export function isThreadHistory(value: unknown): value is ThreadHistory {
   );
 }
 
-export function currentThreadId(history: ThreadHistory): string | null {
+function currentThreadId(history: ThreadHistory): string | null {
   return history.entries[history.index] ?? null;
 }
 

@@ -61,7 +61,7 @@ const DETAILS_OPEN_DELAY_MS = 700;
 /** The one-click snooze lands at 9am tomorrow, local time. */
 const SNOOZE_MORNING_HOUR = 9;
 
-export function tomorrowMorning(now = new Date()): number {
+function tomorrowMorning(now = new Date()): number {
   const next = new Date(now);
   next.setDate(next.getDate() + 1);
   next.setHours(SNOOZE_MORNING_HOUR, 0, 0, 0);

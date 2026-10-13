@@ -31,7 +31,7 @@ export interface RowDetails {
   agent: boolean;
 }
 
-export const ROW_DETAIL_KEYS: readonly (keyof RowDetails)[] = [
+const ROW_DETAIL_KEYS: readonly (keyof RowDetails)[] = [
   "project",
   "branch",
   "machine",
@@ -40,7 +40,7 @@ export const ROW_DETAIL_KEYS: readonly (keyof RowDetails)[] = [
   "agent",
 ];
 
-export const DEFAULT_ROW_DETAILS: RowDetails = {
+const DEFAULT_ROW_DETAILS: RowDetails = {
   project: true,
   branch: true,
   machine: true,
@@ -237,32 +237,6 @@ export function usePersistedChoice<T extends string>(
     (next: T) => {
       try {
         window.localStorage.setItem(key, next);
-      } catch {
-        // See writeSet.
-      }
-      setValue(next);
-    },
-    [key],
-  );
-  return [value, commit];
-}
-
-/** A persisted nullable string, for filters that are usually off. */
-export function usePersistedValue(
-  key: string,
-): [string | null, (next: string | null) => void] {
-  const [value, setValue] = useState<string | null>(() => {
-    try {
-      return window.localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  });
-  const commit = useCallback(
-    (next: string | null) => {
-      try {
-        if (next === null) window.localStorage.removeItem(key);
-        else window.localStorage.setItem(key, next);
       } catch {
         // See writeSet.
       }

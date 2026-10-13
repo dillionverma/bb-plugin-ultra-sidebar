@@ -7,7 +7,7 @@
 // There is no "Sort by": within a section the order is always newest-created
 // first — a stack that never reshuffles under the cursor — and the manual
 // drag already covers the case where that is not what the user wants.
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -215,7 +215,7 @@ function ActionButton({
   label,
   onClick,
 }: {
-  icon: string;
+  icon: IconName;
   label: string;
   onClick(): void;
 }) {

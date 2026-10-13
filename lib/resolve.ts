@@ -151,7 +151,7 @@ function isWorking(thread: PluginSidebarThread): boolean {
  * person, fails, or starts working again it must come back: hiding live work
  * or a raised hand is the one failure this feature cannot afford.
  */
-export function wakesEarly(thread: PluginSidebarThread): boolean {
+function wakesEarly(thread: PluginSidebarThread): boolean {
   if (thread.hasPendingInteraction) return true;
   if (ATTENTION_INDICATORS.has(thread.indicator)) return true;
   if (LIVE_INDICATORS.has(thread.indicator)) return true;
@@ -411,21 +411,4 @@ function buildNode(
     hasPendingDescendant,
     hasWorkingDescendant,
   };
-}
-
-/**
- * How many rows this node will actually render: itself, plus every descendant
- * reachable through expanded chevrons. The windowed list treats a whole root
- * subtree as one item, so this is the only honest height estimate for it.
- */
-export function expandedRowCount(
-  node: ThreadNode,
-  isExpanded: (threadId: string) => boolean,
-): number {
-  if (node.children.length === 0 || !isExpanded(node.thread.id)) return 1;
-  let total = 1;
-  for (const child of node.children) {
-    total += expandedRowCount(child, isExpanded);
-  }
-  return total;
 }

@@ -26,7 +26,7 @@ export type GroupBy = "project" | "status";
 export const GROUP_BY_OPTIONS: readonly GroupBy[] = ["project", "status"];
 
 export const PINNED_SECTION_ID = "pinned";
-export const PROJECT_SECTION_PREFIX = "project:";
+const PROJECT_SECTION_PREFIX = "project:";
 
 export function projectSectionId(projectId: string): string {
   return `${PROJECT_SECTION_PREFIX}${projectId}`;

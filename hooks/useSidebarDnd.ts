@@ -52,7 +52,7 @@ export interface DragState {
   hoverLine: string | null;
 }
 
-export const IDLE_DRAG: DragState = {
+const IDLE_DRAG: DragState = {
   active: false,
   hoverSection: null,
   hoverLine: null,

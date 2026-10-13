@@ -15,7 +15,6 @@ import {
 } from "../lib/order";
 import {
   SIDEBAR_CHANGED,
-  itemKey,
   type ItemRef,
   type OrderEntry,
   type Placement,
@@ -26,7 +25,7 @@ import { UndoHistory } from "../lib/history";
 
 const EMPTY_STATE: SidebarState = { revision: -1, order: [], lifecycle: [], prompts: [] };
 
-export interface SidebarStoreApi {
+interface SidebarStoreApi {
   state: SidebarState;
   isLoading: boolean;
   error: string | null;
@@ -220,10 +219,4 @@ function toOrder(placements: readonly Placement[]): OrderEntry[] {
     ...placement,
     sortIndex,
   }));
-}
-
-/** True when this item carries a hand-picked position. */
-export function isPlaced(state: SidebarState, item: ItemRef): boolean {
-  const key = itemKey(item.kind, item.refId);
-  return state.order.some((entry) => itemKey(entry.kind, entry.refId) === key);
 }

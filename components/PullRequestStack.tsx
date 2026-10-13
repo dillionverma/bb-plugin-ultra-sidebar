@@ -7,15 +7,15 @@
 // section; nothing here is an error the user can act on from a hover card.
 import { useEffect, useState } from "react";
 import type { ComponentPropsWithoutRef, ComponentType } from "react";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
 export const STACK_ENDPOINT =
   "/api/v1/plugins/bb-pr-stacks/rpc/stack_for_thread";
 
-export type StackCheckState = "passing" | "failing" | "pending" | "none";
+type StackCheckState = "passing" | "failing" | "pending" | "none";
 
-export interface StackPullRequest {
+interface StackPullRequest {
   number: number;
   title: string;
   headRefName: string;
@@ -80,7 +80,7 @@ export function flattenStack(node: StackNode, depth = 0): FlatStackEntry[] {
   ];
 }
 
-export function formatStackState(pullRequest: StackPullRequest): string {
+function formatStackState(pullRequest: StackPullRequest): string {
   return pullRequest.isDraft && pullRequest.state === "open"
     ? "draft"
     : pullRequest.state;
@@ -203,7 +203,7 @@ const PlainLink: StackLink = ({ href, children, ...rest }) => (
 );
 
 /** The glyph and colour GitHub itself uses for each PR state. */
-const STATE_GLYPH: Record<string, { icon: string; className: string; label: string }> = {
+const STATE_GLYPH: Record<string, { icon: IconName; className: string; label: string }> = {
   open: { icon: "GitPullRequest", className: "text-emerald-500", label: "Open" },
   draft: { icon: "GitPullRequestDraft", className: "text-muted-foreground", label: "Draft" },
   merged: { icon: "GitMerge", className: "text-violet-500", label: "Merged" },

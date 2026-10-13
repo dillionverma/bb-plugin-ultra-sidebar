@@ -31,7 +31,7 @@ export const TOUCH_HOLD_MS = 250;
 /** Hover-to-expand delay over a collapsed section during a drag. */
 export const SPRING_LOAD_MS = 600;
 
-export type DragKind = ItemKind | "section";
+type DragKind = ItemKind | "section";
 
 /** A row or section: what can sit under the pointer, or be picked up. */
 export interface DropZone {

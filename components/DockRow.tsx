@@ -86,7 +86,7 @@ export function DockAction({ label, icon, text, tone, disabled, onActivate }: {
   </RowTip>;
 }
 
-export function RowTip({ label, children }: { label: string; children: ReactNode }) {
+function RowTip({ label, children }: { label: string; children: ReactNode }) {
   return <Tooltip>
     <TooltipTrigger asChild>{children}</TooltipTrigger>
     <TooltipContent side="top" sideOffset={6}>{label}</TooltipContent>

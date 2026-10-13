@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Recognize explicit device names; arbitrary host names keep a generic glyph. */
-export function machineKind(name: string): "laptop" | "desktop" | "computer" {
+function machineKind(name: string): "laptop" | "desktop" | "computer" {
   const normalized = name.toLowerCase().replace(/[\s_]+/g, "-");
   if (/(^|-)(mbp|mba|macbook(?:-pro|-air)?|laptop)(-|$)/.test(normalized)) {
     return "laptop";

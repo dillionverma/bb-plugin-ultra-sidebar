@@ -3,7 +3,6 @@ import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
-import { COARSE_POINTER_CHECK_SLOT_CLASS } from "./coarse-pointer-sizing.js";
 import {
   MENU_ITEM_LAST_HOVERED_CLASS,
   MenuHoverProvider,
@@ -11,6 +10,9 @@ import {
 } from "./menu-item-hover.js";
 import { LIST_HOVER_TRANSITION } from "./motion.js";
 import { Icon } from "../../components/ui/icon.js";
+
+const COARSE_POINTER_CHECK_SLOT_CLASS =
+  "h-3.5 w-3.5 max-md:pointer-coarse:h-5 max-md:pointer-coarse:w-5";
 
 type ContextMenuSubTriggerElement = React.ComponentRef<
   typeof ContextMenuPrimitive.SubTrigger
@@ -82,9 +84,7 @@ const CONTEXT_MENU_LAYER_CLASS = "z-[70]";
 const ContextMenu = ContextMenuPrimitive.Root;
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 const ContextMenuGroup = ContextMenuPrimitive.Group;
-const ContextMenuPortal = ContextMenuPrimitive.Portal;
 const ContextMenuSub = ContextMenuPrimitive.Sub;
-const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 
 const ContextMenuSubTrigger = React.forwardRef<
   ContextMenuSubTriggerElement,
@@ -345,15 +345,15 @@ export {
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuCheckboxItem,
-  ContextMenuRadioItem,
+  
+  
   ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuGroup,
-  ContextMenuPortal,
+  
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-  ContextMenuRadioGroup,
+  
 };

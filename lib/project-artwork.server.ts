@@ -49,13 +49,13 @@ export interface ProjectIconSource {
   }): Promise<ProjectFileContent>;
 }
 
-export interface ProjectIcon {
+interface ProjectIcon {
   kind: "image";
   bytes: Uint8Array<ArrayBuffer>;
   mimeType: string;
 }
 
-export interface ProjectGlyph {
+interface ProjectGlyph {
   kind: "glyph";
   svg: string;
 }

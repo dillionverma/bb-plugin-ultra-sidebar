@@ -5,7 +5,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import type { ReactNode } from "react";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { GoalDetails } from "./GoalDetails";
 import { PlanDetails } from "./PlanDetails";
 import { ModeIcon } from "./ThreadModes";
@@ -24,7 +24,7 @@ import { SubtreeChildList } from "./SubtreeSummary";
 import type { ThreadNode } from "@/lib/resolve";
 
 function Fact({ icon, label, children }: {
-  icon: string;
+  icon: IconName;
   label: string;
   children: ReactNode;
 }) {

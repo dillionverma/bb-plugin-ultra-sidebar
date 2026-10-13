@@ -1,6 +1,6 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 
-export interface WorkflowAgent {
+interface WorkflowAgent {
   id: string;
   label: string;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -10,7 +10,7 @@ export interface WorkflowAgent {
   createdAt: number;
 }
 
-export interface WorkflowAgentRun {
+interface WorkflowAgentRun {
   id: string;
   name: string;
   agents: WorkflowAgent[];

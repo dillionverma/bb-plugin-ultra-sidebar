@@ -33,7 +33,7 @@ import { isFinished, isStatusBucket } from "../lib/status";
 import type { UndoHistory } from "../lib/history";
 
 const ROW = "[data-sidebar-thread-shortcut-target]";
-export function isEditing(target: EventTarget | null) {
+function isEditing(target: EventTarget | null) {
   return (
     target instanceof Element &&
     !!target.closest(

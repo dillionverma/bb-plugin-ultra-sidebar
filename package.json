@@ -65,6 +65,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
     "build": "bb plugin build"
   },
   "description": "Move fast across threads, agents, and projects. Organize parallel work, review progress, and get more done.",
