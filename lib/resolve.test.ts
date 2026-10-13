@@ -6,8 +6,8 @@ import { statusBucket } from "./status";
 import type { Lifecycle, OrderEntry, ThreadPrompt } from "./types";
 
 const projects = [
-  { id: "p1", name: "Alpha", isPersonal: false },
-  { id: "p2", name: "Beta", isPersonal: false },
+  { id: "p1", name: "Alpha", isPersonal: false, href: "/projects/p1", settingsHref: "/projects/p1/settings" },
+  { id: "p2", name: "Beta", isPersonal: false, href: "/projects/p2", settingsHref: "/projects/p2/settings" },
 ];
 
 function thread(

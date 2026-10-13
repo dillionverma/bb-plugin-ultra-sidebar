@@ -16,9 +16,20 @@ vi.mock("thinking-orbs", () => ({
   ),
 }));
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { PluginSidebarProject, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { applyStateChange } from "./lib/history";
 import type { SidebarState } from "./lib/types";
+
+/**
+ * The threadActions calls the harness records. SDK 0.6.37 dropped the field
+ * from its testing types but still fills it; if a release stops, this throws
+ * instead of letting every assertion on it pass vacuously.
+ */
+function sidebarActionCalls(slot: { inspection: unknown }): ({ method: string } & Record<string, unknown>)[] {
+  const calls = (slot.inspection as { sidebarActionCalls?: ({ method: string } & Record<string, unknown>)[] }).sidebarActionCalls;
+  if (calls === undefined) throw new Error("The test harness no longer records sidebar action calls");
+  return calls;
+}
 
 const liveHost = vi.hoisted(() => ({
   enabled: false,
@@ -95,8 +106,8 @@ function groupBy(mode: "status" | "project") {
 }
 
 const projects = [
-  { id: "p1", name: "Alpha", isPersonal: false },
-  { id: "p2", name: "Beta", isPersonal: false },
+  { id: "p1", name: "Alpha", isPersonal: false, href: "/projects/p1", settingsHref: "/projects/p1/settings" },
+  { id: "p2", name: "Beta", isPersonal: false, href: "/projects/p2", settingsHref: "/projects/p2/settings" },
 ];
 
 const state: SidebarState = { revision: 1, order: [], lifecycle: [], prompts: [] };
@@ -114,7 +125,7 @@ describe("PR outcome labels", () => {
         id: "pr-thread", projectId: "p1",
         environment: {
           id: "pr-env", name: "feature", branchName: "feature",
-          providerId: null, workspaceDisplayKind: null,
+          providerId: null, workspaceDisplayKind: null, path: null, isWorktree: null,
         },
       })],
       rpc: {
@@ -139,7 +150,7 @@ describe("PR outcome labels", () => {
         id: "pr-thread", projectId: "p1",
         environment: {
           id: "pr-env", name: "feature", branchName: "feature",
-          providerId: null, workspaceDisplayKind: null,
+          providerId: null, workspaceDisplayKind: null, path: null, isWorktree: null,
         },
       })],
       rpc: {
@@ -181,7 +192,7 @@ describe("PR outcome labels", () => {
 
 async function mount(options: {
   threads: PluginSidebarThread[];
-  projects?: { id: string; name: string; isPersonal: boolean }[];
+  projects?: PluginSidebarProject[];
   sidebarState?: SidebarState;
   activeThreadId?: string | null;
   mode?: "status" | "project";
@@ -204,7 +215,6 @@ async function mount(options: {
       isCompactViewport: options.mobile ?? false,
       onNavigate: options.onNavigate ?? (() => {}),
       searchQuery: "",
-      Original: () => <div data-testid="bb-original-list" />,
     },
     {
       sidebarThreads: {
@@ -245,7 +255,6 @@ async function mount(options: {
         isCompactViewport={options.mobile ?? false}
         onNavigate={options.onNavigate ?? (() => {})}
         searchQuery=""
-        Original={() => <div data-testid="bb-original-list" />}
       />,
     ),
   };
@@ -399,7 +408,7 @@ describe("ultra sidebar thread list", () => {
   it("previews 25 of 619 Done roots, explicitly loads more, and resets on show-less or collapse", async () => {
     const roots = Array.from({ length: 619 }, (_, index) => thread({
       id: `done-${index}`, projectId: "p1", createdAt: 619 - index,
-      environment: { id: `env-${index}`, name: "checkout", branchName: null, providerId: null, workspaceDisplayKind: null },
+      environment: { id: `env-${index}`, name: "checkout", branchName: null, providerId: null, workspaceDisplayKind: null, path: null, isWorktree: null },
     }));
     const lifecycle = roots.map(root => ({ threadId: root.id, status: "done" as const, snoozedUntil: null }));
     const execution = vi.fn(() => ({ entries: [] }));
@@ -574,7 +583,7 @@ describe("ultra sidebar thread list", () => {
     fireEvent.click(within(row as HTMLElement).getByLabelText("Pin to the top"));
     // The pin lives on the host, so bb's own sidebar and this one agree; the
     // list only moves once the host reports the thread back as pinned.
-    expect(slot.inspection.sidebarActionCalls).toContainEqual({
+    expect(sidebarActionCalls(slot)).toContainEqual({
       method: "setPinned",
       threadId: "t2",
       pinned: true,
@@ -599,7 +608,7 @@ describe("ultra sidebar thread list", () => {
     // And the same action releases it.
     const row = slot.getByText("t2").closest("[data-sidebar-thread-id]")!;
     fireEvent.click(within(row as HTMLElement).getByLabelText("Unpin from the top"));
-    expect(slot.inspection.sidebarActionCalls).toContainEqual({
+    expect(sidebarActionCalls(slot)).toContainEqual({
       method: "setPinned",
       threadId: "t2",
       pinned: false,
@@ -977,7 +986,6 @@ describe("ultra sidebar thread list", () => {
           navigated += 1;
         },
         searchQuery: "",
-        Original: () => <div />,
       },
       {
         sidebarThreads: {
@@ -992,7 +1000,7 @@ describe("ultra sidebar thread list", () => {
 
     slot.getByText("t1").closest("a")!.click();
 
-    expect(slot.inspection.sidebarActionCalls).toContainEqual(
+    expect(sidebarActionCalls(slot)).toContainEqual(
       expect.objectContaining({ method: "open", threadId: "t1" }),
     );
     expect(navigated).toBe(1);
@@ -1028,7 +1036,6 @@ describe("ultra sidebar thread list", () => {
         isCompactViewport: false,
         onNavigate: () => {},
         searchQuery: "",
-        Original: () => <div />,
       },
       {
         sidebarThreads: {
@@ -1079,7 +1086,7 @@ describe("ultra sidebar thread list", () => {
     expect(until).toBeGreaterThan(Date.now());
     expect(new Date(until).getHours()).toBe(9);
 
-    expect(slot.inspection.sidebarActionCalls).not.toContainEqual(
+    expect(sidebarActionCalls(slot)).not.toContainEqual(
       expect.objectContaining({ method: "open" }),
     );
     expect(slot.queryByLabelText("Rename thread")).toBeNull();
@@ -1129,7 +1136,6 @@ describe("ultra sidebar thread list", () => {
         isCompactViewport: false,
         onNavigate: () => {},
         searchQuery: "",
-        Original: () => <div />,
       },
       {
         openUrl: () => true,
@@ -1145,6 +1151,8 @@ describe("ultra sidebar thread list", () => {
                 branchName: "feat/links",
                 providerId: null,
                 workspaceDisplayKind: null,
+                path: null,
+                isWorktree: null,
               },
             }),
           ],
@@ -1204,7 +1212,7 @@ describe("ultra sidebar thread list", () => {
       }),
     );
 
-    expect(slot.inspection.sidebarActionCalls).not.toContainEqual(
+    expect(sidebarActionCalls(slot)).not.toContainEqual(
       expect.objectContaining({ method: "open" }),
     );
   });
@@ -1220,7 +1228,6 @@ describe("ultra sidebar thread list", () => {
         isCompactViewport: false,
         onNavigate: () => {},
         searchQuery: "",
-        Original: () => <div />,
       },
       {
         sidebarThreads: {
@@ -1235,6 +1242,8 @@ describe("ultra sidebar thread list", () => {
                 branchName: "feat/sidebar",
                 providerId: null,
                 workspaceDisplayKind: null,
+                path: null,
+                isWorktree: null,
               },
               host: { id: "h1", name: "studio-mbp" },
             }),
@@ -1505,7 +1514,7 @@ describe("sidebar keyboard and bulk actions", () => {
     fireEvent.keyDown(row("a"), { key: "z", metaKey: true, shiftKey: true });
     await waitFor(() => expect(row("c").dataset.sidebarBucket).toBe("done"));
     expect(
-      slot.inspection.sidebarActionCalls.filter(
+      sidebarActionCalls(slot).filter(
         (call) => call.method === "open",
       ),
     ).toHaveLength(0);
@@ -1583,7 +1592,7 @@ describe("sidebar keyboard and bulk actions", () => {
     fireEvent.keyDown(a, { key: "a", ctrlKey: true });
     fireEvent.keyDown(a, { key: "p" });
     expect(
-      slot.inspection.sidebarActionCalls.filter(
+      sidebarActionCalls(slot).filter(
         (call) => call.method === "setPinned",
       ),
     ).toEqual([
@@ -1599,7 +1608,7 @@ it('undoes a rename back to an automatic title, and persists a keyboard reorder'
   row().focus(); fireEvent.keyDown(row(),{key:'F2'});
   const input = await slot.findByLabelText('Rename thread');
   fireEvent.change(input,{target:{value:'New name'}}); fireEvent.keyDown(input,{key:'Enter'});
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toContainEqual(expect.objectContaining({method:'rename'})));
+  await waitFor(() => expect(sidebarActionCalls(slot)).toContainEqual(expect.objectContaining({method:'rename'})));
   row().focus(); fireEvent.keyDown(row(),{key:'z',ctrlKey:true});
   await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual({method:'threads.restoreTitle',input:{threadId:'a',expected:'New name',title:null}}));
   fireEvent.keyDown(row(),{key:'ArrowDown',altKey:true});
@@ -1689,7 +1698,7 @@ it("keeps only the New thread bar at rest and selects through standard checkboxe
   fireEvent.click(checkbox);
   expect(checkbox.getAttribute("aria-checked")).toBe("true");
   expect(slot.getByText("1 selected")).toBeTruthy();
-  expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+  expect(sidebarActionCalls(slot).filter(call => call.method === "open")).toHaveLength(0);
   fireEvent.click(slot.getByLabelText("More selection actions"));
   expect(await slot.findByRole("button", { name: "Pin to top" })).toBeTruthy();
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
@@ -1716,7 +1725,7 @@ describe("compact goal context", () => {
     fireEvent.click(slot.getByRole("button", { name: "Active goal: details for goal-thread" }));
     expect(await slot.findByText("Make setup reliable")).toBeTruthy();
     expect(slot.getByText("Tokens used")).toBeTruthy();
-    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+    expect(sidebarActionCalls(slot).filter(call => call.method === "open")).toHaveLength(0);
     expect(slot.inspection.rpcCalls.filter(call => call.method === "threads.goal")).toHaveLength(1);
     expect(slot.queryByText("npm run typecheck")).toBeNull();
   });
@@ -1731,7 +1740,7 @@ describe("compact goal context", () => {
     expect(slot.getByText("Your turn").closest(".bb-ws-mainline")).not.toBeNull();
     fireEvent.click(slot.getByRole("button", { name: "Active goal: details for waiting-goal" }));
     expect(await slot.findByText("Goal details unavailable. Open the thread to inspect.")).toBeTruthy();
-    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+    expect(sidebarActionCalls(slot).filter(call => call.method === "open")).toHaveLength(0);
   });
 });
 
@@ -1831,7 +1840,7 @@ describe("project context and change counts", () => {
       expect(row.querySelector(".bb-ws-mainline")?.nextElementSibling).toBe(row.querySelector("[data-thread-summary]"));
     }
     fireEvent.click(within(progress).getByText("+12"));
-    expect(slot.inspection.sidebarActionCalls.some(call => call.method === "open")).toBe(true);
+    expect(sidebarActionCalls(slot).some(call => call.method === "open")).toBe(true);
     expect(onNavigate).toHaveBeenCalledOnce();
   });
 
@@ -1856,7 +1865,7 @@ describe("project context and change counts", () => {
     const slot = await mount({
       compact: true,
       mode: "status",
-      projects: [{ id: "p0", name: "Personal", isPersonal: true }, ...projects],
+      projects: [{ id: "p0", name: "Personal", isPersonal: true, href: "/projects/p0", settingsHref: "/projects/p0/settings" }, ...projects],
       threads: [
         thread({ id: "loose", projectId: "p0" }),
         thread({ id: "alpha", projectId: "p1" }),
@@ -1906,14 +1915,14 @@ describe("thread summary actions", () => {
     expect(await slot.findByText("Compare upgrade options before implementing.")).toBeTruthy();
     expect(await slot.findByText("gpt-6-astra")).toBeTruthy();
     expect(plan.getAttribute("aria-expanded")).toBe("true");
-    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+    expect(sidebarActionCalls(slot).filter(call => call.method === "open")).toHaveLength(0);
     fireEvent.keyDown(plan, { key: "Escape" });
     await waitFor(() => expect(plan.getAttribute("aria-expanded")).toBe("false"));
     fireEvent.click(machine);
     expect(slot.queryByRole("heading", { name: "planning" })).toBeNull();
     expect(machine.tagName).toBe("SPAN");
     expect(machine.getAttribute("aria-expanded")).toBeNull();
-    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+    expect(sidebarActionCalls(slot).filter(call => call.method === "open")).toHaveLength(0);
   });
 });
 
@@ -2077,7 +2086,7 @@ describe("sidebar project filter", () => {
     expect(slot.getByRole("button", { name: "Filter by project: 2 projects" })).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Done selecting projects" }));
     expect(slot.queryByPlaceholderText("Search projects…")).toBeNull();
-    expect(slot.inspection.sidebarActionCalls.filter(call => call.method === "open")).toHaveLength(0);
+    expect(sidebarActionCalls(slot).filter(call => call.method === "open")).toHaveLength(0);
   });
 
   it("scopes the schedules in the dock to the projects in the filter", async () => {
@@ -2111,7 +2120,7 @@ describe("sidebar project filter", () => {
     expect(slot.queryByLabelText("Wake all snoozed threads")).toBeNull();
 
     fireEvent.click(within(dock).getByText("Parked work"));
-    expect(slot.inspection.sidebarActionCalls).toContainEqual(expect.objectContaining({ method: "open", threadId: "parked", options: { split: false } }));
+    expect(sidebarActionCalls(slot)).toContainEqual(expect.objectContaining({ method: "open", threadId: "parked", options: { split: false } }));
 
     fireEvent.click(within(dock).getByRole("button", { name: "Wake Parked work" }));
     await waitFor(() => expect(slot.inspection.rpcCalls).toContainEqual(expect.objectContaining({
@@ -2154,7 +2163,7 @@ describe("sidebar project filter", () => {
     expect(within(row).getByText("In 30m")).toBeTruthy();
     expect(within(row).getByRole("button", { name: "Run Nightly triage now" })).toBeTruthy();
     fireEvent.click(row);
-    expect(slot.inspection.sidebarActionCalls).toContainEqual(expect.objectContaining({ method: "open", threadId: "run-1", options: { split: false } }));
+    expect(sidebarActionCalls(slot)).toContainEqual(expect.objectContaining({ method: "open", threadId: "run-1", options: { split: false } }));
     expect(onNavigate).toHaveBeenCalled();
     expect(slot.queryByText("Run now")).toBeNull();
 

@@ -5,10 +5,9 @@ import { useThreadDiffs } from "../hooks/useThreadDiffs";
 import { ThreadDiffsContext } from "./ThreadWorkSummary";
 import { SidebarInteractions, useSidebarSelection } from "./SidebarInteractions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
+import * as pluginApp from "@get-bb/plugin-sdk/app";
 import {
   experimental_useProviders,
-  experimental_useSidebarThreadActions,
   experimental_useSidebarThreads,
   useBbNavigate,
   useRpc,
@@ -67,7 +66,6 @@ import {
 import { DragStateProvider } from "./drag-state-context";
 import { SidebarDock } from "./SidebarDock";
 import { SidebarSection } from "./SidebarSection";
-import { ErrorBoundary } from "./ErrorBoundary";
 import {
   isFinished,
   isManualStatus,
@@ -80,14 +78,35 @@ import { containsThread } from "@/lib/contains-thread";
 import { previewRoots, SECTION_PREVIEW_SIZE } from "@/lib/section-preview";
 import { useSectionPreviews } from "@/hooks/useSectionPreviews";
 
-function SidebarBody(props: PluginThreadListProps) {
+/**
+ * bb's own row actions: open with its split and focus rules, pin, read
+ * state, silent rename, archive with its child-count confirmation, and the
+ * delete confirmation. SDK 0.6 dropped this hook from its types but still
+ * bridges it at runtime (dist/app.js in 0.6.37 and 0.6.39). The declared
+ * alternatives, useBbNavigate and useSdk().threads, skip those confirmations
+ * and split rules, so the rows keep calling the bridged hook.
+ */
+interface SidebarThreadActions {
+  open(threadId: string, options?: { split?: boolean }): void;
+  openNewThread(options?: { projectId?: string; focusPrompt?: boolean }): void;
+  setPinned(threadId: string, pinned: boolean): Promise<void>;
+  setRead(threadId: string, read: boolean): Promise<void>;
+  rename(threadId: string, title: string): Promise<void>;
+  archive(threadId: string): void;
+  requestDelete(threadId: string): void;
+}
+const useSidebarThreadActions = (
+  pluginApp as unknown as { experimental_useSidebarThreadActions: () => SidebarThreadActions }
+).experimental_useSidebarThreadActions;
+
+export function UltraSidebar(props: PluginThreadListProps) {
   const { activeThreadId, onNavigate } = props;
   const host = experimental_useSidebarThreads();
   const hostThreadsRef = useRef(host.threads);
   hostThreadsRef.current = host.threads;
   const workflowAgents = useWorkflowAgents(host.threads);
   const threads = useMemo(() => withWorkflowThreads(host.threads, workflowAgents), [host.threads, workflowAgents]);
-  const threadActions = experimental_useSidebarThreadActions();
+  const threadActions = useSidebarThreadActions();
   const store = useSidebarStore();
 
   const providers = experimental_useProviders();
@@ -830,20 +849,6 @@ function Skeleton() {
   );
 }
 
-
-/**
- * A crash in a replaced thread list is total and silent: bb re-renders its own
- * list and the user is left wondering where their sidebar went. The boundary
- * keeps the failure local — they lose the grouping, not the sidebar.
- */
-export function UltraSidebar(props: PluginThreadListProps) {
-  const Original: ComponentType = props.Original;
-  return (
-    <ErrorBoundary fallback={<Original />}>
-      <SidebarBody {...props} />
-    </ErrorBoundary>
-  );
-}
 
 function SelectionToggle() {
   const selection = useSidebarSelection();

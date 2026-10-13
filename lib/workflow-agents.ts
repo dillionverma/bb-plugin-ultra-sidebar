@@ -47,16 +47,24 @@ export function withWorkflowThreads(
       const indicator = agent.status === "running" ? "runtime"
         : agent.status === "succeeded" ? "unread-success"
         : agent.status === "failed" ? "unread-error" : "none";
+      const status = agent.status === "running" ? "active" : "idle";
       result.set(id, {
         id, projectId: origin.projectId, parentThreadId: origin.id,
-        title: agent.label, titleFallback: null, sectionId: null,
+        title: agent.label, titleFallback: null, displayTitle: agent.label, sectionId: null,
+        lifecycleOwnerThreadId: null, sourceThreadId: null,
+        status, runtimeStatus: status, queuedWork: "none",
         originKind: null, originPluginId: "workflows", providerId: agent.provider,
         hasPendingInteraction: false,
         activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
         indicator, indicatorLabel: agent.status === "running" ? "Thread working"
           : agent.status === "succeeded" ? "Workflow agent completed"
           : agent.status === "failed" ? "Workflow agent failed" : null,
-        isUnread: false, isPinned: false, isArchived: false,
+        isUnread: false, isPinned: false, pinnedAt: null, pinSortKey: null,
+        isArchived: false, archivedAt: null,
+        href: `/projects/${origin.projectId}/threads/${id}`,
+        // bb keeps workflow workers out of its own list; this row exists so the
+        // tree can nest them under the thread that runs them.
+        isHidden: true,
         // Workflow workers reuse their origin's environment by contract.
         environment: origin.environment, host: origin.host,
         createdAt: agent.createdAt, updatedAt: agent.createdAt,
