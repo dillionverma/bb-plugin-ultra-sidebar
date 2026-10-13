@@ -81,9 +81,8 @@ afterEach(() => {
 });
 
 /**
- * Grouping is a persisted preference read at mount, and it defaults to
- * project. Tests about the status grouping have to say so explicitly rather
- * than rely on a default that is free to change.
+ * Most tests choose their grouping explicitly so changing the product default
+ * cannot silently change what they cover.
  */
 function groupBy(mode: "status" | "project") {
   window.localStorage.setItem("bb-workspace-sidebar:collapsed-sections:v2", "[]");
@@ -181,14 +180,19 @@ async function mount(options: {
   projects?: PluginSidebarProject[];
   sidebarState?: SidebarState;
   activeThreadId?: string | null;
-  mode?: "status" | "project";
+  mode?: "status" | "project" | null;
   compact?: boolean;
   mobile?: boolean;
   onNavigate?: () => void;
   rpc?: Record<string, (input: unknown) => unknown>;
   waitUntilReady?: boolean;
 }) {
-  groupBy(options.mode ?? "project");
+  if (options.mode === null) {
+    window.localStorage.setItem("bb-workspace-sidebar:collapsed-sections:v2", "[]");
+    window.localStorage.setItem("bb-workspace-sidebar:compact-rows:v1", "false");
+  } else {
+    groupBy(options.mode ?? "project");
+  }
   if (options.compact) window.localStorage.setItem("bb-workspace-sidebar:compact-rows:v1", "true");
   let live = structuredClone(options.sidebarState ?? state);
   const app = await loadPluginApp(() => import("./app"));
@@ -1294,7 +1298,7 @@ describe("ultra sidebar thread list", () => {
 
   it("groups by status out of the box, with all five buckets", async () => {
     const slot = await mount({
-      mode: "status",
+      mode: null,
       threads: [
         thread({ id: "waiting", projectId: "p1", hasPendingInteraction: true }),
         thread({ id: "quiet", projectId: "p1" }),

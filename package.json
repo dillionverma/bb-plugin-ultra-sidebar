@@ -14,15 +14,11 @@
     "branding": {
       "icon": "PanelLeft"
     },
-    "server": "./server.ts",
-    "app": "./app.tsx"
+    "server": "./src/server.ts",
+    "app": "./src/app.tsx"
   },
   "files": [
-    "app.tsx",
-    "server.ts",
-    "components",
-    "hooks",
-    "lib",
+    "src",
     "skills",
     "tsconfig.json",
     "GUIDE.md",

@@ -14,6 +14,8 @@ function pullRequest(state: AvailablePullRequest["state"]): PullRequestResult {
       title: "Fix sidebar status",
       url: "https://github.com/acme/sidebar/pull/12",
       state,
+      autoMerge: false,
+      inMergeQueue: false,
       attention: state === "open" ? "none" : state,
       baseRefName: "main",
       headRefName: "fix-sidebar-status",

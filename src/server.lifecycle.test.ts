@@ -27,7 +27,7 @@ describe("resuming backlog threads", () => {
         await harness.behavior.emitThreadEvent(event, { entry: makeQueueEntry({ threadId: "t1", initiator: "user" }) });
       }
       const state = await harness.behavior.callRpc("sidebar.state", null);
-      expect(state.lifecycle).toContainEqual({ threadId: "t1", status: null, snoozedUntil: null });
+      expect(state).toMatchObject({ lifecycle: [{ threadId: "t1", status: null, snoozedUntil: null }] });
     } finally {
       await harness.lifecycle.dispose();
     }
@@ -39,7 +39,7 @@ describe("resuming backlog threads", () => {
       await file(harness, status);
       await harness.behavior.emitThreadEvent("thread.active", { thread: makeThreadResponse({ id: "t1" }) });
       const state = await harness.behavior.callRpc("sidebar.state", null);
-      expect(state.lifecycle).toContainEqual({ threadId: "t1", status, snoozedUntil: null });
+      expect(state).toMatchObject({ lifecycle: [{ threadId: "t1", status, snoozedUntil: null }] });
     } finally {
       await harness.lifecycle.dispose();
     }
@@ -50,7 +50,7 @@ describe("resuming backlog threads", () => {
     try {
       await file(harness, "backlog");
       await harness.behavior.emitThreadEvent("message.queued", { entry: makeQueueEntry({ threadId: "t1", initiator: "agent" }) });
-      expect((await harness.behavior.callRpc("sidebar.state", null)).lifecycle).toContainEqual({ threadId: "t1", status: "backlog", snoozedUntil: null });
+      expect(await harness.behavior.callRpc("sidebar.state", null)).toMatchObject({ lifecycle: [{ threadId: "t1", status: "backlog", snoozedUntil: null }] });
     } finally {
       await harness.lifecycle.dispose();
     }

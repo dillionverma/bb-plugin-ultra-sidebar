@@ -14,18 +14,13 @@
     ],
     "paths": {
       "@/*": [
-        "./*"
+        "./src/*"
       ]
     },
     "noEmit": true,
     "skipLibCheck": true
   },
   "include": [
-    "server.ts",
-    "app.tsx",
-    "components",
-    "lib",
-    "hooks",
-    "app.test.tsx"
+    "src"
   ]
 }

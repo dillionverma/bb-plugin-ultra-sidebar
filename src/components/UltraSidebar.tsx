@@ -116,12 +116,10 @@ export function UltraSidebar(props: PluginThreadListProps) {
   const [projectIcons, setProjectIcons] = usePersistedFlag(PROJECT_ICONS_KEY, true);
   const [showArchived, setShowArchived] = useState(false);
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
-  // Projects are the sidebar's only containers now, so they are also its
-  // default shape. A stored "workspace" from before is not in the list and
-  // falls back to this.
+  // Status is the default workflow; an explicit saved project preference wins.
   const [groupBy, setGroupBy] = usePersistedChoice<GroupBy>(
     GROUP_BY_KEY,
-    "project",
+    "status",
     GROUP_BY_OPTIONS,
   );
   const filters = useSidebarFilters();
