@@ -711,6 +711,13 @@ export function UltraSidebar(props: PluginThreadListProps) {
       ),
     );
   };
+  // Ultra Launcher, when installed, claims New thread by cancelling this
+  // event (its lib/contract.ts names it); otherwise bb's own composer opens.
+  const openNewThread = () => {
+    const event = new Event("ultra-launcher:open", { cancelable: true });
+    if (window.dispatchEvent(event)) threadActions.openNewThread({ focusPrompt: true });
+    onNavigate();
+  };
 
   const sectionIds = sections.map((section) =>
     sortableId({
@@ -731,11 +738,7 @@ export function UltraSidebar(props: PluginThreadListProps) {
               history={store.history}
               batch={store.batch}
               threadIds={threads.map(thread => thread.id)}
-              onNewThread={() => {
-                const event = new Event("quick-thread:open", { cancelable: true });
-                if (window.dispatchEvent(event)) threadActions.openNewThread({ focusPrompt: true });
-                onNavigate();
-              }}
+              onNewThread={openNewThread}
               onCollapseAll={collapseAll}
               onExpandAll={expandAll}
               onViewOptions={() => requestAnimationFrame(() => setViewOptionsOpen(true))}
@@ -757,13 +760,7 @@ export function UltraSidebar(props: PluginThreadListProps) {
                         aria-label="New thread"
                         title="New thread"
                         className="mr-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => {
-                          const event = new Event("quick-thread:open", { cancelable: true });
-                          if (window.dispatchEvent(event)) {
-                            threadActions.openNewThread({ focusPrompt: true });
-                          }
-                          onNavigate();
-                        }}
+                        onClick={openNewThread}
                       >
                         <Icon name="Plus" className="size-3.5" />
                         <span className="bb-ws-new-thread-label">New thread</span>

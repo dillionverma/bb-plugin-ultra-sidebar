@@ -28,7 +28,7 @@ Use `bb sidebar --help` to read and file threads from a terminal.
 
 ## Designed to stay responsive
 
-Repeated diff and PR lookups use caches. Agent activity is followed for working or expanded threads. Model catalog requests are coalesced. These are implementation choices; no comparative speed benchmark is claimed.
+Repeated diff and PR lookups use caches. Model catalog requests are coalesced. These are implementation choices; no comparative speed benchmark is claimed.
 
 See the [full guide](GUIDE.md) for statuses, bulk actions, undo, row details, and model handoff.
 

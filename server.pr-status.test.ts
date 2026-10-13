@@ -96,7 +96,7 @@ describe("sidebar CLI pull request status", () => {
   it.each(["backlog", "done", "canceled"] as const)("preserves manual %s over the PR status", async status => {
     const { harness } = await setup(pullRequest("open"));
     try {
-      await harness.behavior.callRpc("lifecycle.setStatus", { threadIds: ["thread"], status });
+      expect(await harness.behavior.runCli(["status", status, "--thread", "thread"])).toMatchObject({ exitCode: 0 });
       expect(await harness.behavior.runCli(["list", "--json"])).toMatchObject({
         exitCode: 0, stdout: JSON.stringify(listedRow(status)),
       });

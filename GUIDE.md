@@ -176,7 +176,7 @@ useful status and mode information. Status bucket names stay in section headings
 with counts beside the heading. Status colors
 live on the indicators and labels; rows use BB's normal background. The
 sidebar shows simple status without command text, tool steps, or elapsed
-timers, and no longer polls for those activity details.
+timers.
 
 Below each title, project, machine, status and mode information sits on the left and change counts
 sit in a consistent column on the right. Additions are green and deletions

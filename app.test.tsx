@@ -1705,20 +1705,51 @@ it("keeps only the New thread bar at rest and selects through standard checkboxe
   expect(slot.queryByRole("toolbar", { name: "Selected threads" })).toBeNull();
 });
 
+describe("New thread", () => {
+  // Ultra Launcher claims the button by cancelling this event (its lib/contract.ts names it).
+  const LAUNCHER_OPEN = "ultra-launcher:open";
+
+  it("offers New thread to Ultra Launcher and runs bb's own flow when nothing claims it", async () => {
+    const offered: Event[] = [];
+    const listen = (event: Event) => { offered.push(event); };
+    window.addEventListener(LAUNCHER_OPEN, listen);
+    const onNavigate = vi.fn();
+    try {
+      const slot = await mount({ threads: [thread({ id: "a", projectId: "p1" })], onNavigate });
+      fireEvent.click(slot.getByRole("button", { name: "New thread" }));
+      expect(offered).toHaveLength(1);
+      expect(offered[0]!.cancelable).toBe(true);
+      expect(sidebarActionCalls(slot)).toContainEqual({ method: "openNewThread", options: { focusPrompt: true } });
+      expect(onNavigate).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(LAUNCHER_OPEN, listen);
+    }
+  });
+
+  it("leaves bb's flow alone when Ultra Launcher claims the event", async () => {
+    const claim = (event: Event) => { event.preventDefault(); };
+    window.addEventListener(LAUNCHER_OPEN, claim);
+    const onNavigate = vi.fn();
+    try {
+      const slot = await mount({ threads: [thread({ id: "a", projectId: "p1" })], onNavigate });
+      fireEvent.click(slot.getByRole("button", { name: "New thread" }));
+      expect(sidebarActionCalls(slot).filter(call => call.method === "openNewThread")).toHaveLength(0);
+      expect(onNavigate).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(LAUNCHER_OPEN, claim);
+    }
+  });
+});
 
 describe("compact goal context", () => {
   it("shows simple status without command details and fetches goal only on inspection", async () => {
     const goal = { objective: "Make setup reliable", status: "active", timeUsedSeconds: 120, tokenBudget: 50000, tokensUsed: 2400, updatedAt: 1 };
     const slot = await mount({ compact: true, threads: [thread({ id: "goal-thread", projectId: "p1", indicator: "runtime", activity: { goals: 1, planMode: 0, workflows: 0, backgroundAgents: 0, backgroundCommands: 0 } })], rpc: {
       "threads.goal": () => ({ goal }),
-      "threads.agentActivity": () => ({ entries: [{ threadId: "goal-thread", activity: { kind: "command", label: "Running command", detail: "npm run typecheck", at: Date.now(), seq: 1 } }] }),
     } });
     const line = slot.container.querySelector("[data-thread-modes]")!;
     expect(line.textContent).toContain("Goal");
     expect(line.textContent).toContain("Working");
-    expect(slot.queryByText("Running command")).toBeNull();
-    expect(slot.queryByText("npm run typecheck")).toBeNull();
-    expect(slot.inspection.rpcCalls.filter(call => call.method === "threads.agentActivity")).toHaveLength(0);
     expect(slot.container.querySelector(".bb-ws-title[data-text-shimmer]")?.textContent).toBe("goal-thread");
     expect(slot.inspection.rpcCalls.filter(call => call.method === "threads.goal")).toHaveLength(0);
     fireEvent.click(slot.getByRole("button", { name: "Active goal: details for goal-thread" }));

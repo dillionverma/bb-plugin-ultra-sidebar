@@ -17,15 +17,6 @@ import { createStore, MIGRATIONS, type Store } from "./lib/store.server";
 import { placeItem, toPlacement } from "./lib/order";
 import { SIDEBAR_CHANGED, type ItemKind, type Placement } from "./lib/types";
 import { isManualStatus, statusBucket } from "./lib/status";
-import {
-  AGENT_ACTIVITY,
-  AGENT_EVENT_TYPES,
-  applyAgentEvents,
-  initialAgentActivityState,
-  type AgentActivityState,
-} from "./lib/agent-activity";
-
-
 import { summarizeQueue } from "./lib/thread-queue";
 import { createScheduledTasksActions, createScheduledTasksReader, scheduledTaskRefSchema, scheduledTasksResultSchema } from "./lib/scheduled-tasks.server";
 import { createThreadDiffReader, threadDiffSchema } from "./lib/thread-diffs.server";
@@ -42,9 +33,6 @@ const orderSchema = z.object({
   sortIndex: z.number().int(),
 });
 
-// Every method answers with the whole state. It is tens to low hundreds of
-// rows, it saves a refetch after each write, and it lets the client use one
-// reconcile path for reads, writes and realtime alike.
 const manualStatusSchema = z.enum(["backlog", "done", "canceled"]);
 
 const lifecycleSchema = z.object({
@@ -65,14 +53,9 @@ const stateSchema = z.object({
   prompts: z.array(promptSchema),
 });
 
-const placementSchema = z.object({
-  kind: itemKindSchema,
-  refId: z.string(),
-});
-
-const itemRefSchema = z.object({
-  kind: itemKindSchema,
-  refId: z.string(),
+const boundedStateSchema = stateSchema.extend({
+  order: z.array(orderSchema).max(5000),
+  lifecycle: z.array(lifecycleSchema).max(10000),
 });
 
 const pullRequestSchema = z.object({
@@ -114,20 +97,6 @@ const openFolderResultSchema = z.discriminatedUnion("outcome", [
     hostName: z.string().nullable(),
   }),
 ]);
-
-// What a live agent is doing right now, folded out of its event log. `kind`
-// is a string on the wire so a new kind never fails validation on an older
-// client; the app narrows it.
-const agentActivitySchema = z.object({
-  threadId: z.string(),
-  activity: z.object({
-    kind: z.string(),
-    label: z.string(),
-    detail: z.string(),
-    seq: z.number().int(),
-    at: z.number().int(),
-  }),
-});
 
 export const rpcContract = defineRpcContract({
   "threads.workflowAgents": {
@@ -176,16 +145,6 @@ export const rpcContract = defineRpcContract({
     input: scheduledTaskRefSchema,
     output: z.object({ ok: z.literal(true) }),
   },
-  /**
-   * The current activity of each thread asked about, for the rows that are
-   * live. Threads with nothing to say are simply absent. Asking is also what
-   * starts the server tracking a thread; updates then arrive on the
-   * AGENT_ACTIVITY realtime channel.
-   */
-  "threads.agentActivity": {
-    input: z.object({ threadIds: z.array(z.string()).min(1).max(300) }),
-    output: z.object({ entries: z.array(agentActivitySchema) }),
-  },
   "sidebar.state": { input: z.null(), output: stateSchema },
   /** Checkout directories for a batch of environments; unknown ids are skipped. */
   "environments.locations": {
@@ -202,17 +161,13 @@ export const rpcContract = defineRpcContract({
     input: z.object({ environmentId: z.string() }),
     output: openFolderResultSchema,
   },
+  /**
+   * Answers with the whole state, like sidebar.state. It is tens to low
+   * hundreds of rows, it saves a refetch after each write, and it lets the
+   * client use one reconcile path for reads, writes and realtime alike.
+   */
   "sidebar.edit": {
-    input: z.object({
-      before: stateSchema.extend({
-        order: z.array(orderSchema).max(5000),
-        lifecycle: z.array(lifecycleSchema).max(10000),
-      }),
-      after: stateSchema.extend({
-        order: z.array(orderSchema).max(5000),
-        lifecycle: z.array(lifecycleSchema).max(10000),
-      }),
-    }),
+    input: z.object({ before: boundedStateSchema, after: boundedStateSchema }),
     output: stateSchema,
   },
   "threads.title": {
@@ -244,36 +199,6 @@ export const rpcContract = defineRpcContract({
   "threads.retry": {
     input: z.object({ threadId: z.string() }),
     output: z.object({ delivery: z.enum(["sent", "queued"]) }),
-  },
-  // One drop is one call: the client sends the complete post-drop list, so
-  // every reorder is the same operation and retrying is harmless.
-  "order.place": {
-    input: z.object({ placements: z.array(placementSchema).max(5000) }),
-    output: stateSchema,
-  },
-  // Delete the rows entirely -> those items sort by recency again.
-  "order.clear": {
-    input: z.object({ items: z.array(itemRefSchema).min(1).max(500) }),
-    output: stateSchema,
-  },
-  /**
-   * File threads in Backlog, Done or Canceled by hand. null puts a thread
-   * back in the hands of its own facts (its pull request, else In progress).
-   */
-  "lifecycle.setStatus": {
-    input: z.object({
-      threadIds: z.array(z.string()).min(1).max(500),
-      status: manualStatusSchema.nullable(),
-    }),
-    output: stateSchema,
-  },
-  /** Hide a thread until a timestamp; null wakes it immediately. */
-  "lifecycle.snooze": {
-    input: z.object({
-      threadId: z.string(),
-      until: z.number().int().nullable(),
-    }),
-    output: stateSchema,
   },
   /**
    * Pull-request state for a batch of environments.
@@ -340,101 +265,6 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(SIDEBAR_CHANGED, { revision });
   });
 
-  // ---- agent activity ----------------------------------------------------
-  //
-  // One reducer state per thread somebody has asked about. The host's
-  // per-thread event signal (debounced to once a second) says "new events up
-  // to seq N"; we pull the tail we have not seen and publish only when the
-  // resolved verb changed. A thread going idle drops its state, so memory is
-  // bounded by the number of threads that were live while a sidebar looked.
-  const agentStates = new Map<string, AgentActivityState>();
-  const agentBootstraps = new Map<string, Promise<AgentActivityState>>();
-  const agentPulls = new Map<string, Promise<void>>();
-  // The event API's per-call ceiling.
-  const AGENT_PAGE = 100;
-
-  function publishAgent(threadId: string, state: AgentActivityState | null) {
-    bb.realtime.publish(AGENT_ACTIVITY, {
-      threadId,
-      activity: state?.current ?? null,
-    });
-  }
-
-  /** Read everything after the last seen seq into the state. */
-  async function pullAgentEvents(
-    threadId: string,
-    state: AgentActivityState,
-  ): Promise<boolean> {
-    let changed = false;
-    for (let page = 0; page < 20; page += 1) {
-      const rows = await bb.sdk.threads.events.list({
-        threadId,
-        afterSeq: String(state.lastSeq),
-        limit: String(AGENT_PAGE),
-        order: "asc",
-        types: AGENT_EVENT_TYPES,
-      });
-      if (rows.length === 0) break;
-      if (applyAgentEvents(state, rows)) changed = true;
-      if (rows.length < AGENT_PAGE) break;
-    }
-    return changed;
-  }
-
-  /** The state for a thread, reading its recent tail on first ask. */
-  function agentStateFor(threadId: string): Promise<AgentActivityState> {
-    const known = agentStates.get(threadId);
-    if (known !== undefined) return Promise.resolve(known);
-    const pending = agentBootstraps.get(threadId);
-    if (pending !== undefined) return pending;
-    const bootstrap = (async () => {
-      const state = initialAgentActivityState();
-      try {
-        // The newest page, oldest first. A turn/started inside it resets
-        // anything older; without one, whatever is open is still the answer.
-        const rows = await bb.sdk.threads.events.list({
-          threadId,
-          limit: String(AGENT_PAGE),
-          order: "desc",
-          types: AGENT_EVENT_TYPES,
-        });
-        applyAgentEvents(state, rows.slice().reverse());
-      } catch (cause) {
-        // Not cached: the next ask tries again rather than sitting on an
-        // empty state until the thread goes idle.
-        bb.log.warn(`Could not read agent activity for ${threadId}: ${cause}`);
-        throw cause;
-      }
-      agentStates.set(threadId, state);
-      return state;
-    })().finally(() => agentBootstraps.delete(threadId));
-    agentBootstraps.set(threadId, bootstrap);
-    return bootstrap;
-  }
-
-  bb.events.on("experimental_thread.events", ({ thread, sequence }) => {
-    const state = agentStates.get(thread.id);
-    // Nobody is looking at this thread; it is bootstrapped when they do.
-    if (state === undefined || sequence <= state.lastSeq) return;
-    // One pull at a time per thread; a signal that lands mid-pull queues.
-    const previous = agentPulls.get(thread.id) ?? Promise.resolve();
-    const pull = previous
-      .then(async () => {
-        if (!agentStates.has(thread.id)) return;
-        if (await pullAgentEvents(thread.id, state))
-          publishAgent(thread.id, state);
-      })
-      .catch((cause) => {
-        bb.log.warn(
-          `Could not follow agent activity for ${thread.id}: ${cause}`,
-        );
-      })
-      .finally(() => {
-        if (agentPulls.get(thread.id) === pull) agentPulls.delete(thread.id);
-      });
-    agentPulls.set(thread.id, pull);
-  });
-
   // ---- last prompted ----------------------------------------------------
   //
   // A thread rises to the top of its list when the person prompts it. The
@@ -471,13 +301,6 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("message.queued", ({ entry }) => {
     if (entry.initiator === "user") store.resumeBacklog(entry.threadId);
   });
-
-  const forgetAgent = ({ thread }: { thread: { id: string } }) => {
-    if (!agentStates.delete(thread.id)) return;
-    publishAgent(thread.id, null);
-  };
-  bb.events.on("thread.idle", forgetAgent);
-  bb.events.on("thread.failed", forgetAgent);
 
   // Artwork discovery is two fuzzy file searches plus a read per candidate,
   // against the project's default checkout. Cached with a TTL so a sidebar
@@ -556,25 +379,6 @@ export default async function plugin(bb: BbPluginApi) {
     "scheduledTasks.run": (ref) => scheduledTaskActions.run(ref),
     "scheduledTasks.setEnabled": (input) => scheduledTaskActions.setEnabled(input),
     "scheduledTasks.delete": (ref) => scheduledTaskActions.remove(ref),
-    "threads.agentActivity": async ({ threadIds }) => {
-      const entries: {
-        threadId: string;
-        activity: NonNullable<AgentActivityState["current"]>;
-      }[] = [];
-      await Promise.all(
-        threadIds.map(async (threadId) => {
-          try {
-            const state = await agentStateFor(threadId);
-            if (state.current !== null) {
-              entries.push({ threadId, activity: state.current });
-            }
-          } catch {
-            // Already logged; one unreadable thread must not fail the batch.
-          }
-        }),
-      );
-      return { entries };
-    },
     "threads.title": async ({ threadId }) =>
       (await bb.sdk.threads.get({ threadId })).title,
     "threads.restoreTitle": async ({ threadId, expected, title }) => {
@@ -612,12 +416,6 @@ export default async function plugin(bb: BbPluginApi) {
     }),
     "sidebar.state": () => store.readState(),
     "sidebar.edit": ({ before, after }) => store.edit(before, after),
-    "order.place": ({ placements }) => store.placeOrder(placements),
-    "order.clear": ({ items }) => store.clearOrder(items),
-    "lifecycle.setStatus": ({ threadIds, status }) =>
-      store.setStatus(threadIds, status),
-    "lifecycle.snooze": ({ threadId, until }) =>
-      store.setSnoozed(threadId, until),
     "threads.queueSummary": async () => ({ entries: summarizeQueue(await bb.sdk.threads.queue.list()) }),
     "threads.execution": async ({ threadIds }) => ({
       entries: await readExecutionOptions(threadIds),
@@ -788,7 +586,6 @@ export default async function plugin(bb: BbPluginApi) {
   // inherit it. Archived threads keep theirs — they come back.
   bb.events.on("thread.deleted", ({ thread }) => {
     executionCache.delete(thread.id);
-    agentStates.delete(thread.id);
     try {
       store.clearOrder([{ kind: "thread", refId: thread.id }]);
     } catch (cause) {
