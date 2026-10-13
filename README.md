@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/readme/demo.gif" alt="Animated demo of Ultra Sidebar view options, thread row actions and multiple selection. All projects and threads shown are demo data." width="960" />
+  <img src="assets/readme/demo.gif" alt="Animated dark-mode demo of Ultra Sidebar view options, thread row actions and multiple selection, against the macOS Golden Gate wallpaper. All projects and threads shown are demo data." width="1200" />
 </p>
 
 Ultra Sidebar replaces BB's thread list. It groups threads by project or by status, keeps pinned work on top, nests subagents under the thread that started them, and puts each thread's pull request, branch and agent activity on its row.
