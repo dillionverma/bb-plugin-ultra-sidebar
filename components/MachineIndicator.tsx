@@ -5,7 +5,7 @@ import {
   LaptopIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { RowTip } from "./RowTip";
 
 /** Recognize explicit device names; arbitrary host names keep a generic glyph. */
 function machineKind(name: string): "laptop" | "desktop" | "computer" {
@@ -32,22 +32,19 @@ export function MachineIcon({ name, className }: { name: string; className?: str
 export function MachineIndicator({ name }: { name: string | null }) {
   if (name === null) return null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          aria-label={`Machine: ${name}`}
-          data-machine-indicator=""
-          data-no-drag=""
-          onPointerDown={event => event.stopPropagation()}
-          onMouseDown={event => event.stopPropagation()}
-          onClick={event => { event.preventDefault(); event.stopPropagation(); }}
-          onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); }}
-          className="flex size-5 shrink-0 cursor-default items-center justify-center rounded text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <MachineIcon name={name} className="size-3" />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6}>Machine · {name}</TooltipContent>
-    </Tooltip>
+    <RowTip label={`Machine · ${name}`}>
+      <span
+        aria-label={`Machine: ${name}`}
+        data-machine-indicator=""
+        data-no-drag=""
+        onPointerDown={event => event.stopPropagation()}
+        onMouseDown={event => event.stopPropagation()}
+        onClick={event => { event.preventDefault(); event.stopPropagation(); }}
+        onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); }}
+        className="flex size-5 shrink-0 cursor-default items-center justify-center rounded text-muted-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <MachineIcon name={name} className="size-3" />
+      </span>
+    </RowTip>
   );
 }

@@ -2,7 +2,7 @@ import { ThreadQueueProvider } from "../hooks/useThreadQueue";
 import { useWorkflowAgents } from "../hooks/useWorkflowAgents";
 import { withWorkflowThreads } from "../lib/workflow-agents";
 import { useThreadDiffs } from "../hooks/useThreadDiffs";
-import { ThreadDiffsContext } from "./ThreadWorkSummary";
+import { ThreadDiffsContext, ThreadFactsContext } from "./ThreadWorkSummary";
 import { SidebarInteractions, useSidebarSelection } from "./SidebarInteractions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as pluginApp from "@get-bb/plugin-sdk/app";
@@ -298,7 +298,7 @@ export function UltraSidebar(props: PluginThreadListProps) {
     () => rootNodes.map((node) => node.thread),
     [rootNodes],
   );
-  const pullRequests = useThreadPullRequests(allRoots, true);
+  const pullRequests = useThreadPullRequests(allRoots);
   // Folder paths for the badges' tooltips and links; fetched once per
   // environment and kept.
   const locations = useEnvironmentLocations(allRoots);
@@ -376,56 +376,53 @@ export function UltraSidebar(props: PluginThreadListProps) {
    * rows that have none would sort back above them, and the row would appear
    * to snap home the moment the server answered.
    */
-  const applyDrop = useCallback(
-    ({ source, resolution, side }: DropOutcome) =>
-      store.batch("Order changed", () => {
-        if (source.kind === "project") {
-          const ordered = sectionsRef.current
-            .map((section) => section.projectId)
-            .filter((id): id is string => id !== null);
-          if (resolution.anchorRefId === null) return;
-          store.reorderGroup(
-            "project",
-            arrayMove(
-              ordered,
-              ordered.indexOf(source.refId),
-              ordered.indexOf(resolution.anchorRefId),
-            ),
-          );
-          return;
-        }
+  const applyDrop = ({ source, resolution, side }: DropOutcome) =>
+    store.batch("Order changed", () => {
+      if (source.kind === "project") {
+        const ordered = sectionsRef.current
+          .map((section) => section.projectId)
+          .filter((id): id is string => id !== null);
+        if (resolution.anchorRefId === null) return;
+        store.reorderGroup(
+          "project",
+          arrayMove(
+            ordered,
+            ordered.indexOf(source.refId),
+            ordered.indexOf(resolution.anchorRefId),
+          ),
+        );
+        return;
+      }
 
-        if (resolution.pin !== null) setPinned(source.refId, resolution.pin);
-        if (resolution.bucket !== null) {
-          // Only the parked statuses can be set by hand; landing on In
-          // progress or In review clears the manual status and lets the pull
-          // request decide again.
-          store.setStatus(
-            [source.refId],
-            isManualStatus(resolution.bucket) ? resolution.bucket : null,
-          );
-        }
+      if (resolution.pin !== null) setPinned(source.refId, resolution.pin);
+      if (resolution.bucket !== null) {
+        // Only the parked statuses can be set by hand; landing on In
+        // progress or In review clears the manual status and lets the pull
+        // request decide again.
+        store.setStatus(
+          [source.refId],
+          isManualStatus(resolution.bucket) ? resolution.bucket : null,
+        );
+      }
 
-        const ids = sectionRowIds(resolution.sectionId);
-        // A section with no rows yet — the empty Pinned list, an empty
-        // bucket. There is nothing to order against, so the status or pin
-        // above is the whole drop.
-        if (ids === null) return;
-        const anchor = resolution.anchorRefId;
-        const next = ids.includes(source.refId)
-          ? anchor === null
-            ? ids
-            : // Inside its own list the rows slid aside as the pointer
-              // crossed them, so the drop takes the anchor's index —
-              // exactly what the person watched happen.
-              arrayMove(ids, ids.indexOf(source.refId), ids.indexOf(anchor))
-          : // Arriving from elsewhere, it lands beside the anchor on the
-            // side it was released over, or at the end of the list.
-            moveId(ids, source.refId, anchor, side);
-        store.reorderGroup("thread", next);
-      }),
-    [store, sectionRowIds, setPinned],
-  );
+      const ids = sectionRowIds(resolution.sectionId);
+      // A section with no rows yet — the empty Pinned list, an empty
+      // bucket. There is nothing to order against, so the status or pin
+      // above is the whole drop.
+      if (ids === null) return;
+      const anchor = resolution.anchorRefId;
+      const next = ids.includes(source.refId)
+        ? anchor === null
+          ? ids
+          : // Inside its own list the rows slid aside as the pointer
+            // crossed them, so the drop takes the anchor's index —
+            // exactly what the person watched happen.
+            arrayMove(ids, ids.indexOf(source.refId), ids.indexOf(anchor))
+        : // Arriving from elsewhere, it lands beside the anchor on the
+          // side it was released over, or at the end of the list.
+          moveId(ids, source.refId, anchor, side);
+      store.reorderGroup("thread", next);
+    });
 
   const dnd = useSidebarDnd({
     onDrop: applyDrop,
@@ -435,58 +432,52 @@ export function UltraSidebar(props: PluginThreadListProps) {
     },
   });
 
-  const nudge = useCallback(
-    (item: ItemRef, direction: -1 | 1) =>
-      store.batch("Order changed", () => {
-        if (item.kind === "project") {
-          const ordered = sectionsRef.current
-            .map((section) => section.projectId)
-            .filter((id): id is string => id !== null);
-          const index = ordered.indexOf(item.refId);
-          if (index === -1) return;
-          const neighbour = ordered[index + direction];
-          if (neighbour === undefined) return;
-          store.reorderGroup(
-            "project",
-            moveId(
-              ordered,
-              item.refId,
-              neighbour,
-              direction < 0 ? "before" : "after",
-            ),
-          );
-          return;
-        }
-        for (const section of sectionsRef.current) {
-          const ids = section.roots.map((root) => root.thread.id);
-          const index = ids.indexOf(item.refId);
-          if (index === -1) continue;
-          const neighbour = ids[index + direction];
-          if (neighbour === undefined) return;
-          store.reorderGroup(
-            "thread",
-            moveId(
-              ids,
-              item.refId,
-              neighbour,
-              direction < 0 ? "before" : "after",
-            ),
-          );
-          return;
-        }
-      }),
-    [store],
-  );
+  const nudge = (item: ItemRef, direction: -1 | 1) =>
+    store.batch("Order changed", () => {
+      if (item.kind === "project") {
+        const ordered = sectionsRef.current
+          .map((section) => section.projectId)
+          .filter((id): id is string => id !== null);
+        const index = ordered.indexOf(item.refId);
+        if (index === -1) return;
+        const neighbour = ordered[index + direction];
+        if (neighbour === undefined) return;
+        store.reorderGroup(
+          "project",
+          moveId(
+            ordered,
+            item.refId,
+            neighbour,
+            direction < 0 ? "before" : "after",
+          ),
+        );
+        return;
+      }
+      for (const section of sectionsRef.current) {
+        const ids = section.roots.map((root) => root.thread.id);
+        const index = ids.indexOf(item.refId);
+        if (index === -1) continue;
+        const neighbour = ids[index + direction];
+        if (neighbour === undefined) return;
+        store.reorderGroup(
+          "thread",
+          moveId(
+            ids,
+            item.refId,
+            neighbour,
+            direction < 0 ? "before" : "after",
+          ),
+        );
+        return;
+      }
+    });
 
   /** Hand a section's rows back to newest-first. */
-  const resetOrder = useCallback(
-    (sectionId: string) => {
-      const ids = sectionRowIds(sectionId);
-      if (ids === null || ids.length === 0) return;
-      store.resetOrder("thread", ids);
-    },
-    [store, sectionRowIds],
-  );
+  const resetOrder = (sectionId: string) => {
+    const ids = sectionRowIds(sectionId);
+    if (ids === null || ids.length === 0) return;
+    store.resetOrder("thread", ids);
+  };
 
   const sections = useMemo(
     () =>
@@ -543,146 +534,119 @@ export function UltraSidebar(props: PluginThreadListProps) {
   // Fetch working changes for the rows on screen.
   const threadDiffs = useThreadDiffs(visibleThreads);
 
-  // One stable bundle, so memoized rows stay memoized.
-  const contextValue = useMemo<SidebarContextValue>(
-    () => ({
-      activeThreadId,
-      compactRows,
-      rowDetails,
-      projectNameOf: (projectId: string) =>
-        projectNameById.get(projectId) ?? "",
-      artworkOf: (projectId: string) =>
-        projectArtwork.get(projectId) ?? null,
-      locationOf: (environmentId: string) =>
-        locations.get(environmentId) ?? null,
-      openFolder,
-      // The host declines schemes it does not own; a plain window.open is
-      // the fallback so a link never silently does nothing.
-      openUrl: (url: string) => {
-        if (!navigate.openUrl(url)) {
-          window.open(url, "_blank", "noopener,noreferrer");
-        }
-      },
-      openThread: (threadId, split) => {
-        // Sidebar actions only resolve threads in the host's visible list.
-        // Workflow workers are hidden; direct navigation loads them by ID.
-        if (hostThreadsRef.current.some(thread => thread.id === threadId)) threadActions.open(threadId, { split });
-        else navigate.toThread(threadId);
-        onNavigate();
-      },
-      setPinned: (threadId: string, pinned: boolean) => {
-        setPinned(threadId, pinned);
-        // A finished thread is never shown pinned (see buildSections), so
-        // pinning one reopens it rather than leaving it where it was.
-        const manual = manualStatusById.get(threadId);
-        if (pinned && manual !== undefined && isFinished(manual)) {
-          store.setStatus([threadId], null);
-        }
-      },
-      setRead: (threadId, read) => void threadActions.setRead(threadId, read),
-      renameThread: (threadId, title) => {
-        void store.history.enqueue(async () => {
-          const before = await rpc.call("threads.title", { threadId });
-          if (before === title) return;
-          await threadActions.rename(threadId, title);
-          store.history.record({
-            label: "Thread renamed",
-            undo: async () => {
-              await rpc.call("threads.restoreTitle", {
-                threadId,
-                expected: title,
-                title: before,
-              });
-            },
-            redo: async () => {
-              await rpc.call("threads.restoreTitle", {
-                threadId,
-                expected: before,
-                title,
-              });
-            },
-          });
-          toast.success("Thread renamed", {
-            id: "sidebar-action",
-            action: {
-              label: "Undo",
-              onClick: () => {
-                void store.history.undo();
-              },
-            },
-          });
+  const contextValue: SidebarContextValue = {
+    activeThreadId,
+    compactRows,
+    rowDetails,
+    projectNameOf: (projectId: string) =>
+      projectNameById.get(projectId) ?? "",
+    artworkOf: (projectId: string) =>
+      projectArtwork.get(projectId) ?? null,
+    locationOf: (environmentId: string) =>
+      locations.get(environmentId) ?? null,
+    openFolder,
+    // The host declines schemes it does not own; a plain window.open is
+    // the fallback so a link never silently does nothing.
+    openUrl: (url: string) => {
+      if (!navigate.openUrl(url)) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    },
+    openThread: (threadId, split) => {
+      // Sidebar actions only resolve threads in the host's visible list.
+      // Workflow workers are hidden; direct navigation loads them by ID.
+      if (hostThreadsRef.current.some(thread => thread.id === threadId)) threadActions.open(threadId, { split });
+      else navigate.toThread(threadId);
+      onNavigate();
+    },
+    setPinned: (threadId: string, pinned: boolean) => {
+      setPinned(threadId, pinned);
+      // A finished thread is never shown pinned (see buildSections), so
+      // pinning one reopens it rather than leaving it where it was.
+      const manual = manualStatusById.get(threadId);
+      if (pinned && manual !== undefined && isFinished(manual)) {
+        store.setStatus([threadId], null);
+      }
+    },
+    setRead: (threadId, read) => void threadActions.setRead(threadId, read),
+    renameThread: (threadId, title) => {
+      void store.history.enqueue(async () => {
+        const before = await rpc.call("threads.title", { threadId });
+        if (before === title) return;
+        await threadActions.rename(threadId, title);
+        store.history.record({
+          label: "Thread renamed",
+          undo: async () => {
+            await rpc.call("threads.restoreTitle", {
+              threadId,
+              expected: title,
+              title: before,
+            });
+          },
+          redo: async () => {
+            await rpc.call("threads.restoreTitle", {
+              threadId,
+              expected: before,
+              title,
+            });
+          },
         });
-      },
-      archiveThread: (threadId) => threadActions.archive(threadId),
-      retryThread: (threadId) => {
-        void rpc.call("threads.retry", { threadId }).then(
-          (result) => {
-            toast.success(
-              result.delivery === "sent" ? "Retrying" : "Retry queued",
-              { id: "sidebar-action" },
-            );
+        toast.success("Thread renamed", {
+          id: "sidebar-action",
+          action: {
+            label: "Undo",
+            onClick: () => {
+              void store.history.undo();
+            },
           },
-          (error: unknown) => {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            toast.error(`Couldn't retry: ${message}`, { id: "sidebar-action" });
-          },
-        );
-      },
-      // Deletion is recursive; only bb can show the confirmation that counts
-      // the child threads, so there is no silent delete here by design.
-      deleteThread: (threadId) => threadActions.requestDelete(threadId),
-      newThreadIn: (projectId) => {
-        threadActions.openNewThread({ projectId, focusPrompt: true });
-        onNavigate();
-      },
-      nudge,
-      resetOrder,
-      provider: (providerId: string) => providerById.get(providerId) ?? null,
-      isSubtreeExpanded: expandedSubtrees.has,
-      toggleSubtree: expandedSubtrees.toggle,
-      setSubtreeExpanded: expandedSubtrees.set,
-      manualStatusOf: (threadId: string) =>
-        manualStatusById.get(threadId) ?? null,
-      setStatus: (threadId: string, status: ManualStatus | null) => {
-        store.setStatus([threadId], status);
-        // Filing a pinned thread away unpins it, exactly as dragging it onto
-        // a parked heading does: a pin says "this is what I'm on", and a
-        // finished thread holding the top of the list says the opposite.
-        if (
-          status !== null &&
-          treeRef.current.pinned.some((node) => node.thread.id === threadId)
-        ) {
-          setPinned(threadId, false);
-        }
-      },
-      setSnoozed: store.setSnoozed,
-      isSectionCollapsed: collapsedSections.has,
-      toggleSection,
-    }),
-    [
-      activeThreadId,
-      rpc,
-      store,
-      compactRows,
-      rowDetails,
-      projectNameById,
-      locations,
-      openFolder,
-      navigate,
-      manualStatusById,
-      threadActions,
-      onNavigate,
-      nudge,
-      resetOrder,
-      providerById,
-      expandedSubtrees.has,
-      expandedSubtrees.toggle,
-      expandedSubtrees.set,
-      collapsedSections.has,
-      toggleSection,
-    ],
-  );
+        });
+      });
+    },
+    archiveThread: (threadId) => threadActions.archive(threadId),
+    retryThread: (threadId) => {
+      void rpc.call("threads.retry", { threadId }).then(
+        (result) => {
+          toast.success(
+            result.delivery === "sent" ? "Retrying" : "Retry queued",
+            { id: "sidebar-action" },
+          );
+        },
+        (error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          toast.error(`Couldn't retry: ${message}`, { id: "sidebar-action" });
+        },
+      );
+    },
+    // Deletion is recursive; only bb can show the confirmation that counts
+    // the child threads, so there is no silent delete here by design.
+    deleteThread: (threadId) => threadActions.requestDelete(threadId),
+    newThreadIn: (projectId) => {
+      threadActions.openNewThread({ projectId, focusPrompt: true });
+      onNavigate();
+    },
+    nudge,
+    resetOrder,
+    provider: (providerId: string) => providerById.get(providerId) ?? null,
+    isSubtreeExpanded: expandedSubtrees.has,
+    toggleSubtree: expandedSubtrees.toggle,
+    setSubtreeExpanded: expandedSubtrees.set,
+    manualStatusOf: (threadId: string) =>
+      manualStatusById.get(threadId) ?? null,
+    setStatus: (threadId: string, status: ManualStatus | null) => {
+      store.setStatus([threadId], status);
+      // Filing a pinned thread away unpins it, exactly as dragging it onto
+      // a parked heading does: a pin says "this is what I'm on", and a
+      // finished thread holding the top of the list says the opposite.
+      if (
+        status !== null &&
+        treeRef.current.pinned.some((node) => node.thread.id === threadId)
+      ) {
+        setPinned(threadId, false);
+      }
+    },
+    setSnoozed: store.setSnoozed,
+  };
 
   if (host.status === "loading" || store.isLoading) {
     return <Skeleton />;
@@ -730,6 +694,7 @@ export function UltraSidebar(props: PluginThreadListProps) {
   return (
     <SidebarContext.Provider value={contextValue}>
       <ThreadDiffsContext.Provider value={threadDiffs}>
+      <ThreadFactsContext.Provider value={{ executions, pullRequests }}>
       <ThreadQueueProvider>
       <DndContext {...dnd.contextProps}>
         <DragStateProvider value={dnd.state}>
@@ -805,8 +770,6 @@ export function UltraSidebar(props: PluginThreadListProps) {
                       hasLoadedMore={hasLoadedMore}
                       onLoadMore={() => previews.loadMore(section.id)}
                       onShowLess={() => previews.reset(section.id)}
-                      executions={executions}
-                      pullRequests={pullRequests}
                       isCollapsed={collapsedSections.has(section.id)}
                       onToggle={() => toggleSection(section.id)}
                     />
@@ -828,6 +791,7 @@ export function UltraSidebar(props: PluginThreadListProps) {
         </DragStateProvider>
       </DndContext>
     </ThreadQueueProvider>
+    </ThreadFactsContext.Provider>
     </ThreadDiffsContext.Provider>
     </SidebarContext.Provider>
   );

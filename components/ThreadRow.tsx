@@ -1,6 +1,6 @@
 import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadModes } from "./ThreadModes";
-import { ThreadDiffCounts, ThreadDiffsContext } from "./ThreadWorkSummary";
+import { ThreadDiffCounts, ThreadDiffsContext, ThreadFactsContext } from "./ThreadWorkSummary";
 import { Checkbox } from "./ui/checkbox";
 import { useSidebarSelection } from "./SidebarInteractions";
 import { memo, useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -18,15 +18,9 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ThreadNode } from "@/lib/resolve";
 import { LEVEL_BADGE_FROM_DEPTH, ROW_BASE_PAD_PX, indentPx } from "@/lib/indent";
-import type { ThreadExecution } from "@/hooks/useThreadExecution";
 import { useSidebar } from "./sidebar-context";
 import { StatusIcon } from "./StatusIcon";
 import { ThreadOrb, agentOrb } from "./ThreadOrb";
@@ -37,6 +31,8 @@ import { RowDropDecor, useDragActive } from "./drag-state-context";
 import { ThreadDetails } from "./ThreadDetails";
 import { MachineIndicator } from "./MachineIndicator";
 import { ProjectIcon } from "./ProjectIcon";
+import { RowTip } from "./RowTip";
+import { tomorrowMorning } from "./tomorrow-morning";
 import { prefetchPullRequestStack } from "./PullRequestStack";
 import {
   BranchBadge,
@@ -44,7 +40,6 @@ import {
   PullRequestBadge,
 } from "./MetaBadges";
 import { ThreadStatus, threadStatus } from "./ThreadStatus";
-import type { ThreadPullRequest } from "@/hooks/useThreadPullRequests";
 import {
   PARKED_BUCKETS,
   STATUS_LABEL,
@@ -57,16 +52,6 @@ import {
  * something else, never triggers it.
  */
 const DETAILS_OPEN_DELAY_MS = 700;
-
-/** The one-click snooze lands at 9am tomorrow, local time. */
-const SNOOZE_MORNING_HOUR = 9;
-
-function tomorrowMorning(now = new Date()): number {
-  const next = new Date(now);
-  next.setDate(next.getDate() + 1);
-  next.setHours(SNOOZE_MORNING_HOUR, 0, 0, 0);
-  return next.getTime();
-}
 
 /**
  * A hover-only action in the row's trailing slot, after T3's sidebar: a
@@ -110,22 +95,6 @@ function ParkButton({
         )}
       </button>
     </RowTip>
-  );
-}
-
-/**
- * The small tooltip directly above a glyph in the row. The native `title`
- * attribute is too slow to feel attached to the thing under the pointer, and
- * a `?` or a tick without a word is a guess.
- */
-function RowTip({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -183,8 +152,6 @@ function RowHover({
 export const ThreadRow = memo(function ThreadRow({
   node,
   showProject,
-  execution,
-  pullRequest,
   sectionLabel = null,
   dragHandle,
   leaving = false,
@@ -192,8 +159,6 @@ export const ThreadRow = memo(function ThreadRow({
   node: ThreadNode;
   /** False under a project heading, where the badge would only repeat it. */
   showProject: boolean;
-  execution: ThreadExecution | undefined;
-  pullRequest: ThreadPullRequest | undefined;
   /** The status heading above the row, when there is one. */
   sectionLabel?: string | null;
   /** dnd-kit's press listeners, from the sortable wrapper; roots only. */
@@ -204,15 +169,17 @@ export const ThreadRow = memo(function ThreadRow({
   const sidebar = useSidebar();
   const selection = useSidebarSelection();
   const { thread } = node;
+  const { executions, pullRequests } = useContext(ThreadFactsContext);
+  const execution = executions.get(thread.id);
+  const pullRequest = pullRequests.get(thread.id);
   const manualStatus = sidebar.manualStatusOf(thread.id);
   const bucket = statusBucket(manualStatus, pullRequest);
   const diff = useContext(ThreadDiffsContext).get(thread.id);
   const diffCounts = diff && (diff.additions > 0 || diff.deletions > 0)
-    ? <ThreadDiffCounts threadId={thread.id} /> : null;
+    ? <ThreadDiffCounts diff={diff} /> : null;
   const isActive = sidebar.activeThreadId === thread.id;
   const isRoot = node.depth === 0;
   const isExpanded = sidebar.isSubtreeExpanded(thread.id);
-  const descendantCount = node.descendantCount;
   const hasChildren = node.children.length > 0;
 
   const compact = sidebar.compactRows;
@@ -275,7 +242,7 @@ export const ThreadRow = memo(function ThreadRow({
   const provider = sidebar.provider(thread.providerId);
   const status = threadStatus(thread, pullRequest, manualStatus);
   const needsInput = thread.hasPendingInteraction || thread.indicator === "waiting-for-input";
-  const orb = needsInput ? null : agentOrb(thread);
+  const orb = agentOrb(thread);
 
   // Each badge is behind its own switch in View options; a switched-off fact
   // is simply absent, and a row with nothing left has no second line.
@@ -318,14 +285,12 @@ export const ThreadRow = memo(function ThreadRow({
     thread.indicator !== "goal" && thread.indicator !== "plan-mode";
   const threadDetails = (
     <ThreadDetails
-      thread={thread}
+      node={node}
       projectName={projectName}
       provider={provider}
       execution={execution}
       pullRequest={pullRequest}
       manualStatus={manualStatus}
-      descendantCount={descendantCount}
-      node={node}
     />
   );
   // Touch has no hover, so coarse pointers keep the actions in view. A phone

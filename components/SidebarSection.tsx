@@ -10,8 +10,6 @@ import { cn } from "@/lib/utils";
 import { railElbowPx, railLeftPx } from "@/lib/indent";
 import type { ThreadNode } from "@/lib/resolve";
 import type { Section } from "@/lib/sections";
-import type { ExecutionMap } from "@/hooks/useThreadExecution";
-import type { PullRequestMap } from "@/hooks/useThreadPullRequests";
 import { guardHandle } from "@/hooks/useSidebarDnd";
 import { sectionKey, sortableId, type DndData, type DropZone } from "@/lib/dnd";
 import { SECTION_PREVIEW_SIZE } from "@/lib/section-preview";
@@ -73,10 +71,7 @@ function useSortableZone(
 
 interface SubtreeProps {
   node: ThreadNode;
-  sectionId: string;
   showProject: boolean;
-  executions: ExecutionMap;
-  pullRequests: PullRequestMap;
   sectionLabel?: string | null;
 }
 
@@ -86,10 +81,7 @@ interface SubtreeProps {
  */
 function SubtreeChildren({
   node,
-  sectionId,
   showProject,
-  executions,
-  pullRequests,
   sectionLabel = null,
 }: SubtreeProps) {
   if (node.children.length === 0) return null;
@@ -111,10 +103,7 @@ function SubtreeChildren({
         <ChildSubtree
           key={child.thread.id}
           node={child}
-          sectionId={sectionId}
           showProject={showProject}
-          executions={executions}
-          pullRequests={pullRequests}
           sectionLabel={sectionLabel}
         />
       ))}
@@ -126,11 +115,9 @@ function RootSubtree({
   node,
   sectionId,
   showProject,
-  executions,
-  pullRequests,
   sectionLabel = null,
   leaving = false,
-}: SubtreeProps & { leaving?: boolean }) {
+}: SubtreeProps & { sectionId: string; leaving?: boolean }) {
   const sidebar = useSidebar();
   const expanded = sidebar.isSubtreeExpanded(node.thread.id);
   const { setNodeRef, style, handle, isDragging } = useSortableZone(
@@ -144,21 +131,14 @@ function RootSubtree({
       <ThreadRow
         node={node}
         showProject={showProject}
-        // Passed as a prop rather than read from context so the memo on
-        // ThreadRow still bails out for rows whose metadata did not change.
-        execution={executions.get(node.thread.id)}
         sectionLabel={sectionLabel}
-        pullRequest={pullRequests.get(node.thread.id)}
         dragHandle={handle}
         leaving={leaving}
       />
       {expanded ? (
         <SubtreeChildren
           node={node}
-          sectionId={sectionId}
           showProject={showProject}
-          executions={executions}
-          pullRequests={pullRequests}
           sectionLabel={sectionLabel}
         />
       ) : null}
@@ -279,13 +259,9 @@ function useRowExit(
 function GroupRows({
   section,
   roots,
-  executions,
-  pullRequests,
 }: {
   section: Section;
   roots: readonly ThreadNode[];
-  executions: ExecutionMap;
-  pullRequests: PullRequestMap;
 }) {
   const sidebar = useSidebar();
   const fullRootIds = useMemo(
@@ -306,8 +282,6 @@ function GroupRows({
           node={node}
           sectionId={section.id}
           showProject={section.showProject}
-          executions={executions}
-          pullRequests={pullRequests}
           sectionLabel={section.kind === "status" ? section.name : null}
           leaving={exit.leaving.has(node.thread.id)}
         />
@@ -319,10 +293,7 @@ function GroupRows({
 /** A subagent row. Not draggable: it has no place of its own to be dropped. */
 function ChildSubtree({
   node,
-  sectionId,
   showProject,
-  executions,
-  pullRequests,
   sectionLabel = null,
 }: SubtreeProps) {
   const sidebar = useSidebar();
@@ -332,17 +303,12 @@ function ChildSubtree({
       <ThreadRow
         node={node}
         showProject={showProject}
-        execution={executions.get(node.thread.id)}
         sectionLabel={sectionLabel}
-        pullRequest={pullRequests.get(node.thread.id)}
       />
       {expanded ? (
         <SubtreeChildren
           node={node}
-          sectionId={sectionId}
           showProject={showProject}
-          executions={executions}
-          pullRequests={pullRequests}
           sectionLabel={sectionLabel}
         />
       ) : null}
@@ -387,8 +353,6 @@ export function SidebarSection({
   onShowLess,
   isCollapsed,
   onToggle,
-  executions,
-  pullRequests,
 }: {
   section: Section;
   previewRoots: readonly ThreadNode[];
@@ -397,8 +361,6 @@ export function SidebarSection({
   onShowLess(): void;
   isCollapsed: boolean;
   onToggle(): void;
-  executions: ExecutionMap;
-  pullRequests: PullRequestMap;
 }) {
   const headingButtonRef = useRef<HTMLButtonElement>(null);
   const showLessButtonRef = useRef<HTMLButtonElement>(null);
@@ -517,8 +479,6 @@ export function SidebarSection({
           <GroupRows
             section={section}
             roots={previewRoots}
-            executions={executions}
-            pullRequests={pullRequests}
           />
         </SortableContext>
       )}

@@ -1,20 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
-
-// The orb paints on a canvas with requestAnimationFrame, matchMedia and
-// IntersectionObserver, none of which jsdom has. The mapping is covered in
-// components/ThreadOrb.test.ts; here it is an inert marker with the same
-// accessible name.
-vi.mock("thinking-orbs", () => ({
-  ThinkingOrb: (props: { state: string; "aria-label": string }) => (
-    <span
-      role="img"
-      aria-label={props["aria-label"]}
-      data-orb-state={props.state}
-    />
-  ),
-}));
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginSidebarProject, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { applyStateChange } from "./lib/history";

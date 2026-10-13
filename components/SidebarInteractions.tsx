@@ -29,6 +29,7 @@ import {
   DialogDescription,
 } from "./ui/dialog";
 import { useSidebar } from "./sidebar-context";
+import { tomorrowMorning } from "./tomorrow-morning";
 import { isFinished, isStatusBucket } from "../lib/status";
 import type { UndoHistory } from "../lib/history";
 
@@ -46,7 +47,6 @@ const Selection = createContext<{
   active: boolean;
   enter(): void;
   exit(): void;
-  selectAll(): void;
   click(id: string, event: MouseEvent): boolean;
   toggle(id: string, range?: boolean): void;
 }>({
@@ -54,7 +54,6 @@ const Selection = createContext<{
   active: false,
   enter: () => {},
   exit: () => {},
-  selectAll: () => {},
   click: (_id: string, _event: MouseEvent) => false,
   toggle: () => {},
 });
@@ -120,11 +119,11 @@ export function SidebarInteractions({
   batch(label: string, action: () => void): void;
   children: ReactNode;
   /** All existing ids, including collapsed or filtered-out rows. */
-  threadIds?: readonly string[];
-  onNewThread?(): void;
-  onCollapseAll?(): void;
-  onExpandAll?(): void;
-  onViewOptions?(): void;
+  threadIds: readonly string[];
+  onNewThread(): void;
+  onCollapseAll(): void;
+  onExpandAll(): void;
+  onViewOptions(): void;
 }) {
   const sidebar = useSidebar();
   const root = useRef<HTMLDivElement>(null);
@@ -208,11 +207,9 @@ export function SidebarInteractions({
     exit();
   };
   const snooze = (threadIds: string[]) => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0);
+    const until = tomorrowMorning();
     batch("Threads snoozed until tomorrow", () =>
-      threadIds.forEach((id) => sidebar.setSnoozed(id, tomorrow.getTime())),
+      threadIds.forEach((id) => sidebar.setSnoozed(id, until)),
     );
     exit();
   };
@@ -224,7 +221,6 @@ export function SidebarInteractions({
   };
 
   useEffect(() => {
-    if (!threadIds) return;
     const existing = new Set(threadIds);
     setSelected((previous) => {
       const kept = new Set([...previous].filter((id) => existing.has(id)));
@@ -460,7 +456,7 @@ export function SidebarInteractions({
   };
 
   return (
-    <Selection.Provider value={{ selected, active, enter, exit, selectAll, click, toggle }}>
+    <Selection.Provider value={{ selected, active, enter, exit, click, toggle }}>
       <ContextMenu>
       <ContextMenuTrigger asChild>
       <SidebarSurface
@@ -590,7 +586,7 @@ export function SidebarInteractions({
         }}
       >
         <ContextMenuLabel>Sidebar</ContextMenuLabel>
-        {onNewThread && <ContextMenuItem onSelect={() => launchFromBackground(onNewThread)}><Icon name="MessageSquarePlus" />New thread</ContextMenuItem>}
+        <ContextMenuItem onSelect={() => launchFromBackground(onNewThread)}><Icon name="MessageSquarePlus" />New thread</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={active ? exit : enter}>
           <Icon name="ListTodo" />{active ? "Exit selection" : "Select threads"}
@@ -599,10 +595,10 @@ export function SidebarInteractions({
           <Icon name="Check" />Select all shown<ContextMenuShortcut>⌘A</ContextMenuShortcut>
         </ContextMenuItem>
         {selected.size > 0 && <ContextMenuItem onSelect={exit}><Icon name="X" />Clear selection<ContextMenuShortcut>Esc</ContextMenuShortcut></ContextMenuItem>}
-        {(onCollapseAll || onExpandAll || onViewOptions) && <ContextMenuSeparator />}
-        {onCollapseAll && <ContextMenuItem onSelect={onCollapseAll}><Icon name="ChevronsUp" />Collapse all</ContextMenuItem>}
-        {onExpandAll && <ContextMenuItem onSelect={onExpandAll}><Icon name="ChevronsDown" />Expand all</ContextMenuItem>}
-        {onViewOptions && <ContextMenuItem onSelect={() => launchFromBackground(onViewOptions)}><Icon name="SlidersHorizontal" />View options…</ContextMenuItem>}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={onCollapseAll}><Icon name="ChevronsUp" />Collapse all</ContextMenuItem>
+        <ContextMenuItem onSelect={onExpandAll}><Icon name="ChevronsDown" />Expand all</ContextMenuItem>
+        <ContextMenuItem onSelect={() => launchFromBackground(onViewOptions)}><Icon name="SlidersHorizontal" />View options…</ContextMenuItem>
       </ContextMenuContent>
       </ContextMenu>
       <Dialog open={help} onOpenChange={setHelp}>

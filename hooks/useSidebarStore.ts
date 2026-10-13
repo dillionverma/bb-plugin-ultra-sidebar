@@ -6,13 +6,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../server";
-import {
-  clearGroupOrder,
-  placeItem,
-  seedGroupOrder,
-  toPlacement,
-  type DropTarget,
-} from "../lib/order";
+import { clearGroupOrder, seedGroupOrder, toPlacement } from "../lib/order";
 import {
   SIDEBAR_CHANGED,
   type ItemRef,
@@ -29,8 +23,6 @@ interface SidebarStoreApi {
   state: SidebarState;
   isLoading: boolean;
   error: string | null;
-  /** Move one item; the full post-drop list is derived here. */
-  moveItem(item: ItemRef, target: DropTarget): void;
   /**
    * Rewrite one section's order outright. Used for manual reordering, which
    * has to seed positions for every member at once — otherwise the first drag
@@ -173,11 +165,6 @@ export function useSidebarStore() {
     state,
     error,
     isLoading: state.revision < 0 && error === null,
-    moveItem: (item, target) =>
-      change("Order changed", (s) => ({
-        ...s,
-        order: toOrder(placeItem(s.order.map(toPlacement), item, target)),
-      })),
     reorderGroup: (kind, ids) =>
       change("Order changed", (s) => ({
         ...s,

@@ -76,33 +76,23 @@ function Badge({
   icon,
   label,
   tip,
-  className,
   maxWidth = "8rem",
 }: {
   icon: IconName;
   label: string;
-  /** What the hover says; omitted, the badge has no tooltip. */
-  tip?: ReactNode;
-  className?: string;
+  tip: ReactNode;
   maxWidth?: string;
 }) {
-  const badge = (
-    <span
-      className={cn(
-        "flex min-w-0 shrink items-center gap-1 text-[11px] leading-4 text-muted-foreground",
-        className,
-      )}
-    >
-      <Icon name={icon} className="size-2.5 shrink-0 opacity-70" />
-      <span className="truncate" style={{ maxWidth }}>
-        {label}
-      </span>
-    </span>
-  );
-  if (tip === undefined) return badge;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipTrigger asChild>
+        <span className="flex min-w-0 shrink items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+          <Icon name={icon} className="size-2.5 shrink-0 opacity-70" />
+          <span className="truncate" style={{ maxWidth }}>
+            {label}
+          </span>
+        </span>
+      </TooltipTrigger>
       <TooltipContent side="top" sideOffset={6} className="max-w-[24rem] break-all">
         {tip}
       </TooltipContent>
@@ -202,21 +192,9 @@ export function PullRequestBadge({
   onOpen,
 }: {
   pullRequest: ThreadPullRequest;
-  /** Opens the pull request on the git host; omitted, the badge is inert. */
-  onOpen?(): void;
+  onOpen(): void;
 }) {
   const attention = PR_ATTENTION[pullRequest.attention] ?? PR_ATTENTION.none!;
-  if (onOpen === undefined) {
-    return (
-      <Badge
-        icon={prIcon(pullRequest)}
-        label={`#${pullRequest.number}`}
-        tip={`#${pullRequest.number} ${pullRequest.title} · ${attention.text}`}
-        maxWidth="4rem"
-        className={attention.className}
-      />
-    );
-  }
   return (
     <LinkBadge
       icon={prIcon(pullRequest)}

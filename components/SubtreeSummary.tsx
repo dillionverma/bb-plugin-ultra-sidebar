@@ -6,9 +6,8 @@
 // many. The count alone — which is all this used to show — is the least
 // actionable of the three.
 //
-// The glyph is the same Linear ring every row already wears and the orb is the
-// same one a working row shows, so there is no second vocabulary to learn, and
-// shape carries the state alongside hue exactly as StatusIcon intends.
+// The orb is the same one a working row shows, so there is no second
+// vocabulary to learn.
 import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ThreadNode } from "@/lib/resolve";
@@ -47,11 +46,6 @@ export function subtreeLabel(node: ThreadNode, tone: SubtreeTone): string {
   return progress;
 }
 
-/**
- * The chip on a collapsed parent: one glyph for the most urgent state below,
- * then the descendant count. Fixed width to about 28px, which matters — a
- * deep row has already spent its width on indent.
- */
 const RING_R = 5.5;
 const RING_C = 2 * Math.PI * RING_R;
 
@@ -197,7 +191,7 @@ function CardRow({
   );
   const needsInput =
     thread.hasPendingInteraction || thread.indicator === "waiting-for-input";
-  const orb = needsInput ? null : agentOrb(thread);
+  const orb = agentOrb(thread);
 
   return (
     <li className="min-w-0">

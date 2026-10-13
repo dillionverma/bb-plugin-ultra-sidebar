@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { ThreadNode } from "../lib/resolve";
 import type { QueueSummary } from "../lib/thread-queue";
 import type { ProviderInfo } from "./sidebar-context";
 import type { PullRequestStackData } from "./PullRequestStack";
@@ -29,6 +30,7 @@ vi.mock("./sidebar-context", () => ({
     locationOf: () => ({ path: "/Users/test/src/bb", hostName: "mbp" }),
     openFolder: harness.openFolder,
     openThread: harness.openThread,
+    manualStatusOf: () => null,
   }),
 }));
 vi.mock("../hooks/useThreadQueue", () => ({ useThreadQueue: () => harness.queue }));
@@ -53,10 +55,22 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
     ...overrides,
   } as PluginSidebarThread;
 }
+function node(overrides: Partial<PluginSidebarThread> = {}, children: ThreadNode[] = []): ThreadNode {
+  return {
+    thread: thread(overrides),
+    depth: 0,
+    children,
+    descendantCount: children.reduce((count, child) => count + 1 + child.descendantCount, 0),
+    hasUnreadDescendant: false,
+    hasPendingDescendant: false,
+    hasWorkingDescendant: false,
+    doneDescendants: 0,
+  };
+}
 const provider = { id: "codex", displayName: "Codex" } as ProviderInfo;
 const execution = { model: "gpt-6-astra", reasoningLevel: "medium", permissionMode: "auto", serviceTier: null };
 function card(overrides: Partial<Parameters<typeof ThreadDetails>[0]> = {}) {
-  return <ThreadDetails thread={thread()} projectName="bb" provider={provider} execution={execution} pullRequest={undefined} descendantCount={0} {...overrides} />;
+  return <ThreadDetails node={node()} projectName="bb" provider={provider} execution={execution} pullRequest={undefined} {...overrides} />;
 }
 
 beforeEach(() => {
@@ -70,7 +84,7 @@ afterEach(cleanup);
 
 describe("thread details", () => {
   it("keeps the title independent of status without showing agent steps or elapsed time", () => {
-    render(card({ thread: thread({ indicator: "runtime" }) }));
+    render(card({ node: node({ indicator: "runtime" }) }));
     const title = screen.getByRole("heading", { name: thread().title! });
     expect(title.textContent).toBe(thread().title);
     expect(title.contains(screen.getByText("Working"))).toBe(false);
@@ -111,7 +125,7 @@ describe("thread details", () => {
     harness.queue = { threadId: "thread-tooltip", count: 2, sendAt: now + 60_000, failed: true, retry: false };
     const openRow = vi.fn();
     render(<div onClick={openRow}>{card({
-      thread: thread({ indicator: "runtime", hasPendingInteraction: true, activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 1 } }),
+      node: node({ indicator: "runtime", hasPendingInteraction: true, activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 1 } }),
       pullRequest: { number: 42, title: "Fix picker", url: "https://github.com/o/r/pull/42", state: "open", attention: "checks_failed", checksState: "failure", failedChecks: 1 },
     })}</div>);
     expect(screen.getByText("Your turn").closest("details")).toBeNull();
@@ -129,7 +143,7 @@ describe("thread details", () => {
     harness.goal.mockImplementation(async method => method === "threads.plan"
       ? { plan: { mode: "plan", prompt: "Investigate the sidebar layout", providerId: "codex" } }
       : { goal: { objective: "Ship the sidebar", status: "active", timeUsedSeconds: 42, tokensUsed: 100, tokenBudget: null } });
-    render(card({ thread: thread({ indicator: "runtime", hasPendingInteraction: true,
+    render(card({ node: node({ indicator: "runtime", hasPendingInteraction: true,
       activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 1, goals: 1 } }) }));
     expect((await screen.findByText("Investigate the sidebar layout")).closest("details")).toBeNull();
     expect(await screen.findByText("Ship the sidebar")).toBeTruthy();
@@ -148,5 +162,13 @@ describe("thread details", () => {
     expect(stack.querySelectorAll("a")).toHaveLength(2);
     fireEvent.click(stack.querySelector("a")!);
     expect(openThread).not.toHaveBeenCalled();
+  });
+
+  it("names the threads nested under the row and opens them", () => {
+    const parent = node({}, [node({ id: "child", title: "Write the migration" })]);
+    render(card({ node: parent }));
+    expect(screen.getByText("1 nested thread")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Write the migration" }));
+    expect(harness.openThread).toHaveBeenCalledWith("child", false);
   });
 });

@@ -9,10 +9,10 @@
 // A timestamp is the fallback — what you show when there is nothing to say.
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ThreadPullRequest } from "@/hooks/useThreadPullRequests";
 import type { ManualStatus } from "@/lib/status";
 import { relativeTime } from "./MetaBadges";
+import { RowTip } from "./RowTip";
 
 /**
  * Six families, so a glance at colour alone is meaningful even before the
@@ -220,12 +220,5 @@ export function ThreadStatus({
     </span>
   );
   if (status.detail === status.text) return text;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{text}</TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6}>
-        {status.detail}
-      </TooltipContent>
-    </Tooltip>
-  );
+  return <RowTip label={status.detail}>{text}</RowTip>;
 }

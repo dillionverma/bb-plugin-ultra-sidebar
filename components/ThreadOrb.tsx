@@ -1,10 +1,10 @@
 // The agent's live state as a thinking-orbs animation.
 //
 // The Linear ring (StatusIcon) says where a thread stands; this says what the
-// agent is doing right now. It only exists while the agent is in motion or
-// waiting on the person, so a row at rest keeps the ring and the sidebar does
-// not turn into a wall of animation. Keyed off bb's indicator, never the pull
-// request: a PR with conflicts is a fact about the work, not about the agent.
+// agent is doing right now. It only exists while the agent is in motion, so a
+// row at rest keeps the ring and the sidebar does not turn into a wall of
+// animation. Keyed off bb's indicator, never the pull request: a PR with
+// conflicts is a fact about the work, not about the agent.
 import { ThinkingOrb } from "@/components/ui/thinking-orb";
 import type { OrbState } from "thinking-orbs";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
@@ -17,7 +17,6 @@ export interface AgentOrb {
 
 // bb adds indicator kinds over time; anything unknown gets no orb.
 const BY_INDICATOR: Record<string, AgentOrb> = {
-  "waiting-for-input": { state: "listening", label: "Waiting for your input" },
   runtime: { state: "working", label: "The agent is running" },
   "working-draft": { state: "working", label: "The agent is running" },
   "background-agent": { state: "connecting", label: "A background agent is running" },
@@ -27,13 +26,14 @@ const BY_INDICATOR: Record<string, AgentOrb> = {
   goal: { state: "solving", label: "Working toward a goal" },
 };
 
-/** Null when the agent is at rest, so the caller can fall back to the ring. */
+/**
+ * Null when the agent is at rest or waiting on the person, so the caller falls
+ * back to the ring or the still return arrow.
+ */
 export function agentOrb(
   thread: Pick<PluginSidebarThread, "indicator" | "indicatorLabel" | "hasPendingInteraction">,
 ): AgentOrb | null {
-  if (thread.hasPendingInteraction) {
-    return { state: "listening", label: thread.indicatorLabel ?? "Waiting on an approval or an answer" };
-  }
+  if (thread.hasPendingInteraction) return null;
   const orb = BY_INDICATOR[thread.indicator];
   if (orb === undefined) return null;
   return { state: orb.state, label: thread.indicatorLabel ?? orb.label };

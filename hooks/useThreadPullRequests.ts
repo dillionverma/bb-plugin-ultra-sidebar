@@ -31,7 +31,6 @@ const BATCH_SIZE = 300;
 
 export function useThreadPullRequests(
   threads: readonly PluginSidebarThread[],
-  enabled: boolean,
 ): PullRequestMap {
   const rpc = useRpc<typeof rpcContract>();
   const [entries, setEntries] = useState<PullRequestMap>(EMPTY);
@@ -45,7 +44,6 @@ export function useThreadPullRequests(
   );
 
   useEffect(() => {
-    if (!enabled) return;
     const targets: { threadId: string; environmentId: string }[] = JSON.parse(key);
     if (targets.length === 0) {
       setEntries(EMPTY);
@@ -98,7 +96,7 @@ export function useThreadPullRequests(
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [rpc, key, enabled]);
+  }, [rpc, key]);
 
-  return enabled ? entries : EMPTY;
+  return entries;
 }

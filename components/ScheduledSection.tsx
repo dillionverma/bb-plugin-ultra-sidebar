@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { usePersistedFlag } from "../hooks/useViewState";
 import { useScheduledTasks } from "../hooks/useScheduledTasks";
 import { lastRunLabel, nextRunLabel, scheduleDescription, scheduleTime, visibleScheduledTasks, type ScheduledTask } from "../lib/scheduled-tasks";
@@ -15,15 +15,10 @@ import { StatusIcon } from "./StatusIcon";
 import { ThreadOrb } from "./ThreadOrb";
 import { TONE_TEXT, type StatusTone } from "./ThreadStatus";
 
-export function ScheduledSection({ projectIds }: { projectIds: readonly string[] | null }) {
+export function ScheduledSection({ projectIds, now }: { projectIds: readonly string[] | null; now: number }) {
   const { value, refresh, run, setEnabled, remove } = useScheduledTasks();
   const [expanded, setExpanded] = usePersistedFlag("bb-workspace-sidebar:scheduled-expanded:v1", false);
-  const [now, setNow] = useState(Date.now);
   const sectionId = useId();
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
   const entries = useMemo(() => visibleScheduledTasks(value?.entries ?? [], projectIds), [value, projectIds]);
   if (!value || value.availability === "unavailable" || (value.availability === "ready" && !entries.length)) return null;
   const attention = entries.filter(task => task.problem || task.lastRunStatus === "failed" || task.lastError).length;

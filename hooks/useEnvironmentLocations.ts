@@ -10,7 +10,6 @@ import type { rpcContract } from "../server";
 
 export interface EnvironmentLocation {
   path: string;
-  hostId: string;
   hostName: string | null;
 }
 
@@ -59,7 +58,6 @@ export function useEnvironmentLocations(
             for (const entry of result.entries) {
               next.set(entry.environmentId, {
                 path: entry.path,
-                hostId: entry.hostId,
                 hostName: entry.hostName,
               });
             }

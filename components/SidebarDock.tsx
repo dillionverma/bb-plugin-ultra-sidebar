@@ -17,7 +17,7 @@ export function SidebarDock({ snoozed, projectIds }: { snoozed: readonly Snoozed
     return () => clearInterval(timer);
   }, []);
   return <div className="bb-ws-dock shrink-0" data-sidebar-dock="">
-    <ScheduledSection projectIds={projectIds} />
+    <ScheduledSection projectIds={projectIds} now={now} />
     <SnoozedSection entries={snoozed} now={now} />
   </div>;
 }

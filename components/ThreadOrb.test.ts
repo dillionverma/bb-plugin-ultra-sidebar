@@ -21,11 +21,11 @@ describe("agentOrb", () => {
     expect(agentOrb(status("workflow"))?.state).toBe("weaving");
     expect(agentOrb(status("plan-mode"))?.state).toBe("composing");
     expect(agentOrb(status("goal"))?.state).toBe("solving");
-    expect(agentOrb(status("waiting-for-input"))?.state).toBe("listening");
   });
 
-  it("listens whenever the thread is blocked on the person, whatever else it is doing", () => {
-    expect(agentOrb(status("runtime", { hasPendingInteraction: true }))?.state).toBe("listening");
+  it("has no orb while the thread waits on the person, whatever else it is doing", () => {
+    expect(agentOrb(status("runtime", { hasPendingInteraction: true }))).toBeNull();
+    expect(agentOrb(status("waiting-for-input"))).toBeNull();
   });
 
   it("has no orb for a thread at rest, so the ring stays", () => {

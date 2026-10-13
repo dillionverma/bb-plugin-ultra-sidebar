@@ -52,7 +52,6 @@ function Rows() {
 function mount() {
   const callbacks = {
     onNewThread: vi.fn(),
-    onNewWorkspace: vi.fn(),
     onCollapseAll: vi.fn(),
     onExpandAll: vi.fn(),
     onViewOptions: vi.fn(),
@@ -109,6 +108,19 @@ describe("sidebar selection surface", () => {
     expect(slot.queryByText("1 hidden")).toBeNull();
     fireEvent.keyDown(slot.row("parent"), { key: "Escape" });
     expect(slot.queryByRole("toolbar")).toBeNull();
+  });
+
+  it("snoozes the focused thread until 9am tomorrow with S", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 2, 10, 15, 30));
+    try {
+      const slot = mount();
+      slot.row("parent").focus();
+      fireEvent.keyDown(slot.row("parent"), { key: "s" });
+      expect(sidebar.setSnoozed).toHaveBeenCalledWith("parent", new Date(2026, 2, 11, 9).getTime());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("dismisses on outside clicks and keeps selection while using portaled controls", () => {

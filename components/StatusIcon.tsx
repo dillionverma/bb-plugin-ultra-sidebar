@@ -13,7 +13,6 @@ import type { StatusBucket } from "@/lib/status";
 
 const LINEAR = {
   backlog: "#bec2c8",
-  todo: "#e2e2e2",
   progress: "#f2c94c",
   review: "#4cb782",
   done: "#5e6ad2",
@@ -35,7 +34,7 @@ interface Glyph {
  * Row tones, plus the five section buckets. "done" is shared: a merged PR
  * on a row and the Done heading above it are the same fact.
  */
-export type StatusGlyphKey = StatusTone | "unread" | StatusBucket;
+export type StatusGlyphKey = StatusTone | StatusBucket;
 
 const BY_TONE: Record<StatusGlyphKey, Glyph> = {
   // The five buckets, as Linear draws its workflow.
@@ -52,8 +51,6 @@ const BY_TONE: Record<StatusGlyphKey, Glyph> = {
   working: { color: LINEAR.progress, fill: 0.5 },
   done: { color: LINEAR.done, fill: 1, mark: "check" },
   problem: { color: LINEAR.blocked, fill: 1, mark: "cross" },
-  // Unread reads as Linear's Todo: a complete ring, nothing done to it yet.
-  unread: { color: LINEAR.todo, fill: 0 },
   idle: { color: LINEAR.backlog, fill: 0, dashed: true },
 };
 

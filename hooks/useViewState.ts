@@ -154,14 +154,6 @@ export function usePersistedSet(key: string): {
 } {
   const [ids, setIds] = useState<Set<string>>(() => readSet(key));
 
-  const commit = useCallback(
-    (next: Set<string>) => {
-      writeSet(key, next);
-      setIds(next);
-    },
-    [key],
-  );
-
   const has = useCallback((id: string) => ids.has(id), [ids]);
 
   const set = useCallback(
@@ -212,8 +204,12 @@ export function usePersistedSet(key: string): {
   );
 
   const replace = useCallback(
-    (nextIds: Iterable<string>) => commit(new Set(nextIds)),
-    [commit],
+    (nextIds: Iterable<string>) => {
+      const next = new Set(nextIds);
+      writeSet(key, next);
+      setIds(next);
+    },
+    [key],
   );
 
   return { has, toggle, set, addAll, replace };

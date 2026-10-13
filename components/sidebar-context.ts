@@ -1,8 +1,3 @@
-// One stable bundle of handlers shared by every row.
-//
-// Rows are memoized on their thread object, which the host keeps identity-
-// stable across updates. That only pays off if their props are stable too, so
-// callbacks travel through context instead of being rebuilt inline per row.
 import { createContext, useContext } from "react";
 import type { experimental_useProviders } from "@get-bb/plugin-sdk/app";
 
@@ -60,9 +55,6 @@ export interface SidebarContextValue {
    * state changed between keystrokes.
    */
   setSubtreeExpanded(threadId: string, expanded: boolean): void;
-
-  isSectionCollapsed(sectionId: string): boolean;
-  toggleSection(sectionId: string): void;
 
   /** The bucket the person filed a thread in by hand, or null. */
   manualStatusOf(threadId: string): ManualStatus | null;

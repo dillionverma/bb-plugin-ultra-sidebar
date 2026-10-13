@@ -1,9 +1,3 @@
-// Live drag state lives in its own contexts, deliberately.
-//
-// The hover keys change as the pointer crosses rows; whether a drag is on at
-// all changes twice per drag. They are separate contexts so the rows, which
-// only ask the second question, are not re-rendered by the first, and the
-// memoization on ThreadRow keeps paying.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { DragState } from "../hooks/useSidebarDnd";
 import { cn } from "@/lib/utils";

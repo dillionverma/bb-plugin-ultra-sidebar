@@ -48,25 +48,21 @@ const ACTIVITY_LABELS: Array<[keyof PluginSidebarThread["activity"], string]> = 
 ];
 
 export function ThreadDetails({
-  thread,
+  node,
   projectName,
   provider,
   execution: cachedExecution,
   pullRequest,
   manualStatus = null,
-  descendantCount,
-  node,
 }: {
-  thread: PluginSidebarThread;
+  node: ThreadNode;
   projectName: string;
   provider: ProviderInfo | null;
   execution: ThreadExecution | undefined;
   pullRequest: ThreadPullRequest | undefined;
   manualStatus?: ManualStatus | null;
-  descendantCount: number;
-  /** The tree node, when the caller has one, so the card can name the children. */
-  node?: ThreadNode;
 }) {
+  const { thread, descendantCount } = node;
   // Row settings can hide the model, but an open detail card still needs it.
   const execution = useThreadExecution([thread], cachedExecution === undefined).get(thread.id) ?? cachedExecution;
   const runningCounts = ACTIVITY_LABELS.flatMap(([key, noun]) => {
@@ -250,11 +246,9 @@ export function ThreadDetails({
               {descendantCount} nested thread{descendantCount === 1 ? "" : "s"}
               {/* Named, not just counted: the row's chip already says how many
                   and how urgent, so the only thing left to say is which. */}
-              {node === undefined ? null : (
-                <div className="mt-1.5">
-                  <SubtreeChildList node={node} />
-                </div>
-              )}
+              <div className="mt-1.5">
+                <SubtreeChildList node={node} />
+              </div>
             </Fact>
           )}
           {runningCounts.length === 0 ? null : <Fact icon="Workflow" label="Running">{runningCounts.join(", ")}</Fact>}
