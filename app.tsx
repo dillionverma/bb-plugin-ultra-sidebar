@@ -55,7 +55,7 @@ export default definePluginApp((app) => {
     },
   });
 
-  app.slots.commandPaletteAction({
+  app.commands.register({
     id: "thread-back",
     title: "Back to previous thread",
     isAvailable: () => canStepThreadHistory(-1),
@@ -64,7 +64,7 @@ export default definePluginApp((app) => {
     },
   });
 
-  app.slots.commandPaletteAction({
+  app.commands.register({
     id: "thread-forward",
     title: "Forward to next thread",
     isAvailable: () => canStepThreadHistory(1),

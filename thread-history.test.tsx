@@ -7,6 +7,11 @@ import {
   mountPluginContentScripts,
   renderSlot,
 } from "@get-bb/plugin-sdk/testing/app";
+import type {
+  PluginAppBuilder,
+  PluginCommandContext,
+  PluginCommandRegistration,
+} from "@get-bb/plugin-sdk/app";
 
 beforeEach(() => {
   window.sessionStorage.clear();
@@ -87,4 +92,36 @@ it("does nothing before the overlay has mounted", async () => {
   ).toEqual({ entries: ["thr_a", "thr_b"], index: 1 });
 
   await scripts.lifecycle.dispose();
+});
+
+it("registers Back and Forward as palette commands that follow the history", async () => {
+  // The IDs are what users have bound shortcuts to, so they stay.
+  const commands: PluginCommandRegistration[] = [];
+  const builder = {
+    slots: new Proxy({}, { get: () => () => undefined }),
+    contentScripts: { register: () => undefined },
+    commands: { register: (command: PluginCommandRegistration) => { commands.push(command); } },
+  } as unknown as PluginAppBuilder;
+  const { default: definition } = await import("./app");
+  definition.setup(builder);
+  expect(commands.map((command) => command.id)).toEqual(["thread-back", "thread-forward"]);
+  const [back, forward] = commands as [PluginCommandRegistration, PluginCommandRegistration];
+  const context = { threadId: null, projectId: null } as PluginCommandContext;
+  expect(back.isAvailable?.(context)).toBe(false);
+  expect(forward.isAvailable?.(context)).toBe(false);
+
+  const app = await loadPluginApp(() => import("./app"));
+  const overlay = app.appOverlays[0]!;
+  const first = renderSlot(overlay, {}, { context: { threadId: "thr_a" } });
+  first.lifecycle.unmount();
+  const second = renderSlot(overlay, {}, { context: { threadId: "thr_b" } });
+  expect(back.isAvailable?.(context)).toBe(true);
+  expect(forward.isAvailable?.(context)).toBe(false);
+
+  await back.run(context);
+  expect(second.inspection.navigateCalls).toEqual([
+    { method: "toThread", threadId: "thr_a" },
+  ]);
+  expect(back.isAvailable?.(context)).toBe(false);
+  expect(forward.isAvailable?.(context)).toBe(true);
 });

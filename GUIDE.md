@@ -52,10 +52,11 @@ bb plugin install .
   projects. Hovering a collapsed section during a drag opens it.
 - **Right-click** anything for the same operations plus rename, pin, archive
   and delete. Everything reachable by drag is reachable from the menu.
-- **Statuses**, the way Conductor does them. Every thread is in exactly one
+- **Statuses.** Every thread is in exactly one
   of five buckets: **In progress** (the default), **In review** (its pull
   request is open), **Done** (its pull request merged, or you marked it),
-  **Backlog** and **Canceled** (you moved it there). A status you set by hand
+  **Canceled** (its pull request was closed without merging, or you moved it
+  there) and **Backlog** (you moved it there). A status you set by hand
   sticks until you change it. Grouping by status shows the five buckets;
   grouping by project keeps Done, Backlog and Canceled in their own headings
   at the bottom so finished work stops crowding the list.
@@ -73,7 +74,11 @@ bb plugin install .
   folder is on the machine bb runs on, and says where it is otherwise.
   Hovering the PR badge shows its title and state; clicking opens it in the
   browser. Both are in the right-click menu too, as **Open folder** and
-  **Open pull request**.
+  **Open pull request**. Pull request state refreshes every 30 seconds while
+  the sidebar is visible and when the window regains focus, so a merge, close
+  or reopen made elsewhere shows up without a reload; the plugin remembers each
+  thread's pull request, so a thread whose checkout is gone keeps its state. A
+  closed pull request is re-checked every five minutes.
 - **Rest on a row** for a moment and a detail card opens beside it: project,
   machine, environment, branch, agent and model, the pull request, subagents,
   what is running, and when it was last active. With the
@@ -127,6 +132,11 @@ With a sidebar row focused:
 Text fields, editors, terminals, menus and dialogs retain their own keyboard
 behavior. When a focused thread disappears, focus moves to the next visible row.
 
+**Mod+[** and **Mod+]** move back and forward through the threads opened in
+this window, the way browser history does. The quick palette lists the same
+two actions as **Back to previous thread** and **Forward to next thread**.
+See [skills/thread-history/SKILL.md](skills/thread-history/SKILL.md).
+
 Order, status and snooze live in this plugin's own SQLite database. bb's own
 projects and threads are never modified for them, so uninstalling loses that
 state and nothing else.
@@ -150,6 +160,8 @@ plugin SDK exposes it only to the sidebar itself.
 
 ```
 npm test
+npm run typecheck
+npm run build
 ```
 
 Covers the resolver's ordering and pinning rules and the rendered list, including the
@@ -198,7 +210,7 @@ Goal and scheduled-message details also open directly from their own chips.
 
 ## Sidebar layout and actions
 
-- Compact rows use BB's native background and theme colors, the original Linear status colors, and tree connectors for expanded groups and subagents.
+- Compact rows use BB's native background and theme colors, status colors on the icons and labels, and tree connectors for expanded groups and subagents.
 - Threads waiting on an answer or approval show a solid amber **Your turn** badge beside the title in both row layouts. A static return arrow replaces the activity animation until the request is resolved; opening or selecting the thread does not hide the badge.
 - Active titles retain neutral text shimmer; reduced-motion settings disable it. Agent, project, machine and modes share one supporting line; the View options → Agent switch hides the agent icon. Click Goal or the machine icon for details, including actual goal objective and usage.
 - Queued message times remain attached to their threads. The bottom dock holds two collapsible sections that stay in view however long the list is: **Scheduled** reads recurring and one-time automations and respects the project filter, and **Snoozed** lists parked threads with their wake time. Rows in the dock are built like thread rows: a glyph, the name, and one word on the right in its status colour (next run, "Failed 2h ago", "Paused", a live orb while "Running"). Clicking a schedule opens the thread that ran it; before the first run it shows the details instead. Hovering reveals Run now, Pause/Resume and an info button; right-click gives the same menu. The details popover has **Run now**, **Pause**/**Resume**, **Open last run**, and **Delete…**, which asks once more before removing the automation for good. Opening the Automations panel itself from the sidebar is not possible: the plugin SDK only navigates to a plugin's own panels. Missing or disabled Automations hides the section; loading failures offer Retry.
@@ -209,7 +221,7 @@ Goal and scheduled-message details also open directly from their own chips.
 
 ### Active threads and detail cards
 
-Rows use BB’s native backgrounds, neutral title shimmer, and the original Linear status colors on icons and labels. Native hover and selection states remain intact.
+Rows use BB’s native backgrounds, neutral title shimmer, and status colors on icons and labels. Native hover and selection states remain intact.
 
 The detail card pairs the full title with a status badge, combines project and machine context, and shows the model and reasoning level beside an inline Details disclosure. Execution settings load on demand even when model names are hidden in rows. Details reveals labeled execution settings, the folder, and exact update time. Threads needing attention include a direct action; goals, queue problems, and pull-request attention remain visible. Running threads omit the thread-record age, while fresh updates read “Just now.”
 

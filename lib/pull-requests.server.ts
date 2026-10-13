@@ -163,6 +163,10 @@ export interface PullRequestReaderDeps {
 const ENVIRONMENT_TTL_MS = 30_000;
 // Keyed by pull request, so two threads watching one PR cost one lookup.
 const FETCH_TTL_MS = 30_000;
+// A closed pull request changes only if somebody reopens it, which is rare
+// enough that noticing it minutes later is fine; an open one changes with
+// every push and review.
+const CLOSED_FETCH_TTL_MS = 5 * 60_000;
 // A thread whose text names no pull request will not start naming one soon.
 const DISCOVERY_TTL_MS = 10 * 60_000;
 const CONCURRENCY = 4;
@@ -246,7 +250,7 @@ export function createPullRequestReader(deps: PullRequestReaderDeps) {
   function memoize<T>(
     cache: Map<string, { at: number; value: T }>,
     inFlight: Map<string, Promise<T>>,
-    ttl: number,
+    ttl: number | ((value: T) => number),
     load: (key: string) => Promise<T>,
     /**
      * Whether an answer is worth keeping. A failure is not: caching it turns
@@ -257,8 +261,9 @@ export function createPullRequestReader(deps: PullRequestReaderDeps) {
   ) {
     return (key: string): Promise<T> => {
       const cached = cache.get(key);
-      if (cached !== undefined && Date.now() - cached.at < ttl) {
-        return Promise.resolve(cached.value);
+      if (cached !== undefined) {
+        const freshFor = typeof ttl === "function" ? ttl(cached.value) : ttl;
+        if (Date.now() - cached.at < freshFor) return Promise.resolve(cached.value);
       }
       const existing = inFlight.get(key);
       if (existing !== undefined) return existing;
@@ -303,7 +308,7 @@ export function createPullRequestReader(deps: PullRequestReaderDeps) {
   const fetchByKey = memoize(
     fetchCache,
     new Map<string, Promise<PullRequestSnapshot | null>>(),
-    FETCH_TTL_MS,
+    (snapshot) => (snapshot?.state === "closed" ? CLOSED_FETCH_TTL_MS : FETCH_TTL_MS),
     (key) => {
       const [repo, number] = key.split("#");
       return limit(() => fetchPull({ repo, number: Number(number) }));

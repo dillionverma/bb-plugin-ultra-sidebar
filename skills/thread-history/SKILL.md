@@ -20,7 +20,9 @@ threads.
 ## Constraints
 
 - The keys are bound by Ultra Sidebar itself, not through Settings → Keyboard, so
-  they cannot be rebound there. BB's own `thread.previous` / `thread.next`
+  they cannot be rebound there. The two palette commands are ordinary plugin
+  commands, so they can be given shortcuts of their own under Settings →
+  Keyboard. BB's own `thread.previous` / `thread.next`
   commands must not share the keys: check `bb settings keyboard list` and use
   `bb settings keyboard reset thread.previous` (and `thread.next`) if they were
   overridden to `Mod+[` / `Mod+]`.

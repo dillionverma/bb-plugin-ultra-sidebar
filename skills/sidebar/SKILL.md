@@ -18,7 +18,8 @@ grouped by **project** or by **status**. Read and file them with `bb sidebar`.
    bb's own, so it is the same pin bb's built-in sidebar shows.
 3. Every thread sits in one of five status buckets. **In progress** is the
    default, **In review** means its pull request is open, **Done** means
-   merged or filed by hand, and **Backlog** and **Canceled** are filed by hand.
+   merged or filed by hand, **Canceled** means its pull request was closed
+   without merging or filed by hand, and **Backlog** is filed by hand.
    Backlog clears when you submit a prompt (including queued prompts) or the
    agent starts running; the thread returns to its automatic status.
 4. Subagent threads are **nested under the thread that spawned them** and are

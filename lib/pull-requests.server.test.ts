@@ -155,6 +155,33 @@ describe("pull request reader", () => {
     expect(bindings.read("thread")?.snapshot.state).toBe("open");
   });
 
+  it("re-asks about a closed pull request every five minutes, not every thirty seconds", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const { read, bindings, fetch } = setup({ outcome: "unavailable" });
+    const closed = { ...hostPull, state: "closed" as const, attention: "closed", checksState: "passing", failedChecks: 0 };
+    bindings.write("thread", { repo: "productstudioinc/cops", number: 1019 }, closed);
+    fetch.mockResolvedValue(closed);
+    expect(await read([target])).toMatchObject([{ state: "closed" }]);
+    now.mockReturnValue(31_000);
+    await read([target]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(5 * 60_000 + 1);
+    await read([target]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-asks about an open pull request after thirty seconds", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const { read, bindings, fetch } = setup({ outcome: "unavailable" });
+    const open = { ...hostPull, state: "open" as const, checksState: "passing", failedChecks: 0 };
+    bindings.write("thread", { repo: "productstudioinc/cops", number: 1019 }, open);
+    fetch.mockResolvedValue(open);
+    await read([target]);
+    now.mockReturnValue(31_000);
+    await read([target]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the stale snapshot when a refresh fails", async () => {
     const { bindings } = setup();
     bindings.write("thread", { repo: "acme/app", number: 3 }, {

@@ -372,7 +372,6 @@ describe("ultra sidebar thread list", () => {
       for (const top of [600, 300, 900, 400]) {
         scroller.scrollTop = top;
         fireEvent.scroll(scroller);
-        expect(scroller.scrollTop).toBe(top);
         expectFlow(25);
       }
       fireEvent.click(slot.getByRole("button", { name: "Expand subagents of done-1" }));

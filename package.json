@@ -1,19 +1,39 @@
 {
   "name": "bb-plugin-workspace-sidebar",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "Groups BB's sidebar threads by project or status with pinned threads on top, subagents nested under their parent, statuses, snooze, undo, and back/forward thread history.",
+  "license": "MIT",
   "type": "module",
   "engines": {
-    "bb": ">=0.43",
-    "bbPluginSdk": ">=0.4.87"
+    "bb": ">=0.46",
+    "bbPluginSdk": ">=0.6.37"
   },
   "bb": {
     "name": "Ultra Sidebar",
-    "description": "Move fast across threads, agents, and projects. Organize parallel work, review progress, and get more done.",
+    "description": "Groups BB's sidebar threads by project or status with pinned threads on top, subagents nested under their parent, statuses, snooze, undo, and back/forward thread history.",
     "branding": {
       "icon": "PanelLeft"
     },
     "server": "./server.ts",
     "app": "./app.tsx"
+  },
+  "files": [
+    "app.tsx",
+    "server.ts",
+    "components",
+    "hooks",
+    "lib",
+    "skills",
+    "tsconfig.json",
+    "GUIDE.md",
+    "PLUGIN_OVERVIEW.md",
+    "!**/*.test.ts",
+    "!**/*.test.tsx"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "bb plugin build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -57,12 +77,6 @@
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   },
-  "scripts": {
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json",
-    "build": "bb plugin build"
-  },
-  "description": "Move fast across threads, agents, and projects. Organize parallel work, review progress, and get more done.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dillionverma/bb-plugin-ultra-sidebar.git"

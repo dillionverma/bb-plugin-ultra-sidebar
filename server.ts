@@ -352,10 +352,6 @@ export default async function plugin(bb: BbPluginApi) {
   const agentPulls = new Map<string, Promise<void>>();
   // The event API's per-call ceiling.
   const AGENT_PAGE = 100;
-  type EventTypes = NonNullable<
-    Parameters<typeof bb.sdk.threads.events.list>[0]["types"]
-  >;
-  const agentEventTypes = AGENT_EVENT_TYPES as unknown as EventTypes;
 
   function publishAgent(threadId: string, state: AgentActivityState | null) {
     bb.realtime.publish(AGENT_ACTIVITY, {
@@ -376,7 +372,7 @@ export default async function plugin(bb: BbPluginApi) {
         afterSeq: String(state.lastSeq),
         limit: String(AGENT_PAGE),
         order: "asc",
-        types: agentEventTypes,
+        types: AGENT_EVENT_TYPES,
       });
       if (rows.length === 0) break;
       if (applyAgentEvents(state, rows)) changed = true;
@@ -400,7 +396,7 @@ export default async function plugin(bb: BbPluginApi) {
           threadId,
           limit: String(AGENT_PAGE),
           order: "desc",
-          types: agentEventTypes,
+          types: AGENT_EVENT_TYPES,
         });
         applyAgentEvents(state, rows.slice().reverse());
       } catch (cause) {
@@ -451,14 +447,6 @@ export default async function plugin(bb: BbPluginApi) {
   // start, a queued message firing, a retry after a failure all land here too.
   // Only the person's own prompts move a row, so the turn that caused this is
   // read back and its initiator checked.
-  const PROMPT_EVENT = ["client/turn/requested"] as unknown as EventTypes;
-
-  // Clear the parked status regardless of who started the work. This is
-  // separate from prompt recency, which still belongs to the person.
-  bb.events.on("message.queued", ({ entry }) => {
-    if (entry.initiator === "user") store.resumeBacklog(entry.threadId);
-  });
-
   bb.events.on("thread.active", async ({ thread }) => {
     store.resumeBacklog(thread.id);
     try {
@@ -466,7 +454,7 @@ export default async function plugin(bb: BbPluginApi) {
         threadId: thread.id,
         limit: "1",
         order: "desc",
-        types: PROMPT_EVENT,
+        types: ["client/turn/requested"],
       });
       const data = turn?.data as { initiator?: string } | undefined;
       if (data?.initiator !== "user") return;
@@ -476,6 +464,12 @@ export default async function plugin(bb: BbPluginApi) {
       // handler that throws on every thread that starts working.
       bb.log.warn(`Could not record the prompt for ${thread.id}: ${cause}`);
     }
+  });
+
+  // Clear the parked status regardless of who started the work. This is
+  // separate from prompt recency, which still belongs to the person.
+  bb.events.on("message.queued", ({ entry }) => {
+    if (entry.initiator === "user") store.resumeBacklog(entry.threadId);
   });
 
   const forgetAgent = ({ thread }: { thread: { id: string } }) => {

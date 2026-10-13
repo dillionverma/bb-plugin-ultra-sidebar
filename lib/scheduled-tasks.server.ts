@@ -4,12 +4,12 @@ import type { ScheduledTask, ScheduledTasksResult } from "./scheduled-tasks";
 
 const triggerSchema = z.discriminatedUnion("triggerType", [
   z.object({ triggerType: z.literal("schedule"), cron: z.string(), timezone: z.string() }),
-  z.object({ triggerType: z.literal("once"), runAt: z.number().finite() }),
+  z.object({ triggerType: z.literal("once"), runAt: z.number() }),
 ]);
 const taskSchema = z.object({
   id: z.string(), projectId: z.string(), projectName: z.string(), name: z.string(),
-  enabled: z.boolean(), trigger: triggerSchema.nullable(), nextRunAt: z.number().finite().nullable(),
-  lastRunStatus: z.string().nullable(), lastRunAt: z.number().finite().nullable(), lastError: z.string().nullable(),
+  enabled: z.boolean(), trigger: triggerSchema.nullable(), nextRunAt: z.number().nullable(),
+  lastRunStatus: z.string().nullable(), lastRunAt: z.number().nullable(), lastError: z.string().nullable(),
   threadId: z.string().nullable(), problem: z.string().nullable(),
 });
 export const scheduledTasksResultSchema = z.object({
@@ -23,8 +23,8 @@ const overviewSchema = z.object({ automations: z.array(z.object({
   automation: z.object({
     id: z.string(), projectId: z.string(), name: z.string(),
     enabled: z.boolean().optional(), trigger: triggerSchema.optional(),
-    nextRunAt: z.number().finite().nullable().optional(),
-    lastRunStatus: z.string().nullable().optional(), lastRunAt: z.number().finite().nullable().optional(),
+    nextRunAt: z.number().nullable().optional(),
+    lastRunStatus: z.string().nullable().optional(), lastRunAt: z.number().nullable().optional(),
     lastError: z.string().nullable().optional(),
     lastRunThreadId: z.string().nullable().optional(), problem: z.string().nullable().optional(),
     execution: z.object({ targetThreadId: z.string().optional() }).optional(),
